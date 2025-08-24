@@ -1,0 +1,5 @@
+jito:
+  bundles-url: https://bundles.jito.wtf/api/v1/bundles
+sol:
+  # rpc: https://api.mainnet-beta.solana.com
+  rpc: http://185.209.179.15:8899

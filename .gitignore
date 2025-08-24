@@ -1,7 +1,12 @@
 .vscode
 
 *.xlsx
+*.csv
 
 .env
 
 *.sql
+
+**/**.log
+
+**/go.sum
