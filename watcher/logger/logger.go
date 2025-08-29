@@ -116,31 +116,60 @@ func CloseAll() {
 func init() {
 	var err error
 
-	// Filename is like: "watcher_sol_20231010_150405.log"
+	// Create ./logs directory if not exists
+	if _, err := os.Stat(config.LogPath); os.IsNotExist(err) {
+		err = os.Mkdir(config.LogPath, 0755)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
 	timestamp := time.Now().Format("20060102_150405")
-	solFile, err = os.OpenFile(config.LogPath+"watcher_sol_"+timestamp+".log", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	globalFile, err = os.OpenFile(config.LogPath+"watcher_"+timestamp+"_global.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
-	jitoFile, err = os.OpenFile(config.LogPath+"watcher_jito_"+timestamp+".log", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+
+	globalBuf = bufio.NewWriter(globalFile)
+	// GlobalLogger
+	GlobalLogger = slog.New(&multiHandler{
+		handlers: []slog.Handler{
+			&bufferedHandler{handler: slog.NewTextHandler(os.Stdout, nil), writer: bufio.NewWriter(os.Stdout)},
+			&bufferedHandler{handler: slog.NewTextHandler(globalBuf, nil), writer: globalBuf},
+		},
+	})
+}
+
+func InitLogs(cmdName string) {
+	var err error
+
+	// Create ./logs directory if not exists
+	if _, err := os.Stat(config.LogPath); os.IsNotExist(err) {
+		err = os.Mkdir(config.LogPath, 0755)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// Filename is like: "watcher_20231010_150405_tool_sol.log"
+	timestamp := time.Now().Format("20060102_150405")
+	solFile, err = os.OpenFile(config.LogPath+"watcher_"+timestamp+"_"+cmdName+"_sol.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
-	globalFile, err = os.OpenFile(config.LogPath+"watcher_global_"+timestamp+".log", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	jitoFile, err = os.OpenFile(config.LogPath+"watcher_"+timestamp+"_"+cmdName+"_sol.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	solBuf = bufio.NewWriter(solFile)
 	jitoBuf = bufio.NewWriter(jitoFile)
-	globalBuf = bufio.NewWriter(globalFile)
 
 	// SolLogger
 	SolLogger = slog.New(&multiHandler{
 		handlers: []slog.Handler{
 			&bufferedHandler{handler: slog.NewTextHandler(os.Stdout, nil), writer: bufio.NewWriter(os.Stdout)},
 			&bufferedHandler{handler: slog.NewTextHandler(solBuf, nil), writer: solBuf},
-			&bufferedHandler{handler: slog.NewTextHandler(globalBuf, nil), writer: globalBuf},
 		},
 	})
 
@@ -149,15 +178,6 @@ func init() {
 		handlers: []slog.Handler{
 			&bufferedHandler{handler: slog.NewTextHandler(os.Stdout, nil), writer: bufio.NewWriter(os.Stdout)},
 			&bufferedHandler{handler: slog.NewTextHandler(jitoBuf, nil), writer: jitoBuf},
-			&bufferedHandler{handler: slog.NewTextHandler(globalBuf, nil), writer: globalBuf},
-		},
-	})
-
-	// GlobalLogger
-	GlobalLogger = slog.New(&multiHandler{
-		handlers: []slog.Handler{
-			&bufferedHandler{handler: slog.NewTextHandler(os.Stdout, nil), writer: bufio.NewWriter(os.Stdout)},
-			&bufferedHandler{handler: slog.NewTextHandler(globalBuf, nil), writer: globalBuf},
 		},
 	})
 }

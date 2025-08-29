@@ -13,6 +13,8 @@ var slotCmd = cobra.Command{
 	Use:   "slot-info",
 	Short: "Start monitoring, syncing and storing Slot information",
 	Run: func(cmd *cobra.Command, args []string) {
+		logger.InitLogs("slot")
+
 		if slotStart < config.MIN_START_SLOT {
 			logger.SolLogger.Error(fmt.Sprintf("start slot (%d) is below minimum allowed slot (%d)", slotStart, config.MIN_START_SLOT))
 			return
