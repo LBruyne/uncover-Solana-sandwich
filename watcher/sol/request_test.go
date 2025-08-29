@@ -29,7 +29,7 @@ func TestGetSlotLeadersRealAPI(t *testing.T) {
 	}
 
 	for i, l := range leaders {
-		fmt.Printf("[%d] Leader: %s\n", i, l)
+		fmt.Printf("[%d] Leader: %d, %s\n", i, l.Slot, l.Leader)
 	}
 }
 

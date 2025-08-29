@@ -4,6 +4,7 @@ go 1.24
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.1
+	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.6.1
 	github.com/spf13/viper v1.20.1
 )
@@ -17,7 +18,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/paulmach/orb v0.11.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect

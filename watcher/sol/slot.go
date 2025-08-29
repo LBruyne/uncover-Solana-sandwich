@@ -25,7 +25,7 @@ func RunSlotCmd(startSlot uint64) error {
 		return fmt.Errorf("failed to get current slot: %w", err)
 	}
 	logger.SolLogger.Info("Current slot from Solana RPC", "slot", currentSlotFromRpc)
-	logger.SolLogger.Info("Fetch slot leaders", "startSlotFromInput", startSlot, "lastSlotInDB", lastSlotInDB, "currentSlotFromRpc", currentSlotFromRpc)
+	logger.SolLogger.Info("Fetch slot leaders statistic", "startSlotFromInput", startSlot, "lastSlotInDB", lastSlotInDB, "currentSlotFromRpc", currentSlotFromRpc)
 	// Use startSlot, lastSlot, currentSlot to determine the starting point:
 	// 1. if startSlot < lastSlotInDB, set startSlot = lastSlotInDB + 1
 	startSlot = max(startSlot, lastSlotInDB+1)
@@ -98,7 +98,7 @@ func RunSlotCmd(startSlot uint64) error {
 		}
 
 		if currentSlot-startSlot < config.SOL_FETCH_SLOT_LOWER {
-			logger.SolLogger.Info("Not enough new slots, sleep and retry", "startSlot", startSlot, "currentSlot", currentSlot)
+			logger.SolLogger.Info("Not enough new slots, sleep and retry after "+config.SOL_FETCH_SLOT_LONG_INTERVAL.String(), "startSlot", startSlot, "currentSlot", currentSlot)
 			time.Sleep(config.SOL_FETCH_SLOT_LONG_INTERVAL)
 			continue
 		}
@@ -125,6 +125,7 @@ func RunSlotCmd(startSlot uint64) error {
 		}
 		startSlot += uint64(len(leaders))
 		// Sleep a while
+		logger.SolLogger.Info("Sleeping for "+config.SOL_FETCH_SLOT_LONG_INTERVAL.String(), "nextStartSlot", startSlot)
 		time.Sleep(config.SOL_FETCH_SLOT_LONG_INTERVAL)
 	}
 }
