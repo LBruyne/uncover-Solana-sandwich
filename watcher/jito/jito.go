@@ -16,7 +16,7 @@ func RunJitoCmd() error {
 	defer ch.Close()
 	cache := utils.NewBundleCache()
 
-	// First load existing bundles from DB into cache
+	// First load existing bundles from DB into cache to avoid re-insertion/overlap
 	latestBundleIds, err := ch.QueryLatestBundleIds(config.JITO_RECENT_FETCH_LIMIT)
 	if err != nil {
 		logger.JitoLogger.Error("Failed to query existing bundles", "err", err)
@@ -30,6 +30,7 @@ func RunJitoCmd() error {
 	limit := config.JITO_RECENT_FETCH_LIMIT
 	// firstQuery := true
 	for {
+		// Actual fetch recent bundles from Jito API
 		bundles, err := GetRecentBundles(limit)
 		if err != nil {
 			logger.JitoLogger.Error("GetRecentBundles failed", "err", err)
@@ -45,6 +46,7 @@ func RunJitoCmd() error {
 		}
 		logger.JitoLogger.Info("Fetched recent bundles", "count", actualFetched, "current_limit", limit, "first_bundle_id", bundles[0].BundleId, "last_bundle_id", bundles[actualFetched-1].BundleId)
 
+		// Parse timestamps and filter out invalid bundles
 		validBundles := make(types.JitoBundles, 0, len(bundles))
 		for _, b := range bundles {
 			ts, err := time.Parse(time.RFC3339, b.Timestamp)
@@ -71,6 +73,7 @@ func RunJitoCmd() error {
 			return validBundles[i].Timestamp.Before(validBundles[j].Timestamp)
 		})
 
+		// Insert new bundles into DB
 		toInsert := make(types.JitoBundles, 0, len(validBundles))
 		for _, b := range validBundles {
 			if cache.Has(b.BundleId) {
@@ -105,6 +108,7 @@ func RunJitoCmd() error {
 		// }
 		// firstQuery = false
 
+		// Report summary
 		logger.JitoLogger.Info("Summary of Jito bundle query",
 			"current_limit", limit,
 			"cached_size", cache.Len(),

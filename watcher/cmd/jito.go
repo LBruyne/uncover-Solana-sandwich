@@ -13,7 +13,7 @@ var jitoCmd = cobra.Command{
 	Use:   "jito",
 	Short: "Start monitoring, sycning and storing Jito bundles",
 	Run: func(cmd *cobra.Command, args []string) {
-		logger.JitoLogger.Info("Starting Jito bundle monitoring...")
+		logger.JitoLogger.Info("Running cmd jito, starting Jito bundle monitoring...")
 
 		// if startSlot > 0 {
 		// 	if startSlot < config.MIN_START_SLOT {

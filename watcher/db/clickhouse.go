@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+	"watcher/logger"
 	"watcher/types"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -59,12 +60,22 @@ func (d *ClickhouseDB) CreateTables() error {
 		ENGINE = MergeTree
 		ORDER BY timestamp
 		SETTINGS index_granularity = 8192`,
+		`CREATE TABLE IF NOT EXISTS solwich.slot_leaders
+		(
+			slot UInt64,
+			leader String
+		)
+		ENGINE = ReplacingMergeTree
+		PRIMARY KEY slot
+		ORDER BY slot
+		SETTINGS index_granularity = 8192`,
 	}
 
 	for _, q := range queries {
 		if err := d.conn.Exec(context.Background(), q); err != nil {
 			return err
 		}
+		logger.GlobalLogger.Info("Check or create table in DB", "query", q)
 	}
 	return nil
 }
@@ -83,6 +94,20 @@ func (d *ClickhouseDB) InsertJitoBundles(bundles types.JitoBundles) error {
 	}
 	for _, bundle := range bundles {
 		err := batch.AppendStruct(bundle)
+		if err != nil {
+			return err
+		}
+	}
+	return batch.Send()
+}
+
+func (d *ClickhouseDB) InsertSlotLeaders(leaders types.SlotLeaders) error {
+	batch, err := d.conn.PrepareBatch(context.Background(), "INSERT INTO slot_leaders")
+	if err != nil {
+		return err
+	}
+	for _, leader := range leaders {
+		err := batch.AppendStruct(leader)
 		if err != nil {
 			return err
 		}
@@ -154,6 +179,15 @@ func (d *ClickhouseDB) QueryLatestBundleIds(limit uint) ([]string, error) {
 	}
 
 	return ids, nil
+}
+
+func (d *ClickhouseDB) QueryLastSlotLeader() (uint64, error) {
+	row := d.conn.QueryRow(context.Background(), "SELECT MAX(slot) from slot_leaders")
+	var slot uint64
+	if err := row.Scan(&slot); err != nil {
+		return 0, fmt.Errorf("query last slot leader failed: %w", err)
+	}
+	return slot, nil
 }
 
 // func (c *ClickhouseDB) QueryJitoBundles(query string, args ...any) ([]*JitoBundle, error) {

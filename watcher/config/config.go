@@ -9,7 +9,7 @@ const (
 
 // Input config
 const (
-	MIN_START_SLOT = 330000000
+	MIN_START_SLOT = 340000000
 )
 
 const (
@@ -19,4 +19,10 @@ const (
 	JITO_RECENT_FETCH_LIMIT    = 30000
 	JITO_RECENT_FETCH_LOWER    = 1000
 	JITO_RECENT_FETCH_INTERVAL = 5 * time.Second
+
+	SOL_FETCH_SLOT_LIMIT          = 5000
+	SOL_FETCH_SLOT_LOWER          = 2000
+	SOL_FETCH_SLOT_MAX_GAP        = 4000000 // the API can preserve data ~0.5 month ago
+	SOL_FETCH_SLOT_SHORT_INTERVAL = 400 * time.Millisecond
+	SOL_FETCH_SLOT_LONG_INTERVAL  = 1000 * time.Second
 )

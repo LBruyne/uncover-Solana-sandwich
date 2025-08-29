@@ -10,3 +10,5 @@
 **/**.log
 
 **/go.sum
+
+watcher/watcher

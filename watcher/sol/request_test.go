@@ -1,0 +1,52 @@
+package sol
+
+import (
+	"fmt"
+	"testing"
+)
+
+func init() {
+	SolonaRpcURL = "http://185.209.179.15:8899"
+}
+
+func TestGetSlotLeadersRealAPI(t *testing.T) {
+	if SolonaRpcURL == "" {
+		t.Skip("SolanaRpcURL not configured, skipping real API test")
+	}
+
+	start := uint64(363000000)
+	limit := uint64(10)
+
+	fmt.Println("Testing real getSlotLeaders RPC...")
+
+	leaders, err := GetSlotLeaders(start, limit)
+	if err != nil {
+		t.Fatalf("GetSlotLeaders failed: %v", err)
+	}
+
+	if len(leaders) == 0 {
+		t.Fatalf("expected at least 1 leader, got 0")
+	}
+
+	for i, l := range leaders {
+		fmt.Printf("[%d] Leader: %s\n", i, l)
+	}
+}
+
+func TestGetCurrentSlotRealAPI(t *testing.T) {
+	if SolonaRpcURL == "" {
+		t.Skip("SolanaRpcURL not configured, skipping real API test")
+	}
+
+	fmt.Println("Testing real getSlot RPC...")
+
+	slot, err := GetCurrentSlot()
+	if err != nil {
+		t.Fatalf("GetCurrentSlot failed: %v", err)
+	}
+
+	fmt.Printf("Current Slot: %d\n", slot)
+	if slot == 0 {
+		t.Errorf("unexpected slot number: 0")
+	}
+}
