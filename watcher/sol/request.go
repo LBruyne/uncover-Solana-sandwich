@@ -1,11 +1,23 @@
 package sol
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"math"
+	"regexp"
+	"sort"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
+	"watcher/config"
 	"watcher/logger"
 	"watcher/types"
 	"watcher/utils"
 
+	bin "github.com/gagliardetto/binary"
+	"github.com/gagliardetto/solana-go"
 	"github.com/spf13/viper"
 )
 
@@ -101,3 +113,487 @@ func GetCurrentSlot() (uint64, error) {
 
 	return uint64(slot), nil
 }
+
+func GetBlock(slot uint64) (*types.Block, error) {
+	logger.SolLogger.Info("Fetching block", "slot", slot)
+
+	params := []interface{}{
+		slot,
+		map[string]interface{}{
+			"encoding":                       "base64",
+			"maxSupportedTransactionVersion": 0,
+			"transactionDetails":             "full", // include full txs
+			"rewards":                        false,  // rewards not needed here
+			"commitment":                     "finalized",
+		},
+	}
+
+	raw, err := CallRpc("getBlock", params)
+	if err != nil {
+		// Normalize well-known error patterns so caller can branch on them
+		msg := err.Error()
+		// e.g. "Slot 123 was skipped, or missing due to ledger jump to recent snapshot"
+		if regexp.MustCompile(`^RPC getBlock returned error: \d+ Slot \d+ was skipped, or missing due to ledger jump to recent snapshot$`).MatchString(msg) ||
+			regexp.MustCompile(`Slot \d+ was skipped, or missing due to ledger jump to recent snapshot`).MatchString(msg) {
+			return nil, fmt.Errorf(utils.SKIPPED_BLOCK)
+		}
+		// e.g. "Block 123 cleaned up, does not exist on node. First available block: 456"
+		if regexp.MustCompile(`Block \d+ cleaned up, does not exist on node\. First available block: \d+`).MatchString(msg) {
+			return nil, fmt.Errorf(utils.CLEANED_BLOCK)
+		}
+		return nil, err
+	}
+
+	// Defensive: handle null result (can happen on some nodes)
+	if raw == nil {
+		return nil, fmt.Errorf(utils.SKIPPED_BLOCK)
+	}
+
+	parseBlkTime := time.Now()
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("parse block failed, unexpected getBlock result type: %T", raw)
+	}
+
+	// Parse blockTime, blockHeight and txs (may be null)
+	var ts time.Time
+	if bt, ok := obj["blockTime"]; ok && bt != nil {
+		switch v := bt.(type) {
+		case float64:
+			ts = time.Unix(int64(v), 0)
+		case int64:
+			ts = time.Unix(v, 0)
+		case json.Number:
+			if sec, e := v.Int64(); e == nil {
+				ts = time.Unix(sec, 0)
+			}
+		default:
+			// leave zero time on unknown type
+		}
+	}
+	var height uint64
+	if bh, ok := obj["blockHeight"]; ok && bh != nil {
+		switch v := bh.(type) {
+		case float64:
+			height = uint64(v)
+		case json.Number:
+			if h, e := v.Int64(); e == nil {
+				height = uint64(h)
+			}
+		default:
+			// leave zero height on unknown type
+		}
+	}
+	var txsData []any
+	if arr, ok := obj["transactions"]; ok && arr != nil {
+		if cast, ok := arr.([]any); ok {
+			txsData = cast
+		} else {
+			return nil, fmt.Errorf("parse block failed, unexpected transactions type: %T", arr)
+		}
+	}
+
+	// Init block model
+	b := &types.Block{
+		Slot:        slot,
+		Timestamp:   ts,
+		BlockHeight: height,
+		Txs:         make([]*types.Transaction, 0, len(txsData)),
+		// RelatedAddrs: utils.NewUnionFind[string](), // union-find for related addresses
+	}
+	// Parse transactions (each item has meta + transaction{ message{...}, signatures... }; message is base64 per our request)
+	for i, txData := range txsData {
+		txMap, ok := txData.(map[string]any)
+		if !ok {
+			logger.SolLogger.Warn("parse block failed, unexpected tx item type", "index", i, "type", fmt.Sprintf("%T", txData))
+			continue
+		}
+
+		// parseTransactionFromBase64 should:
+		//   - decode base64 message
+		//   - extract account keys, instructions, program ids, etc.
+		//   - build *types.Transaction with RelatedAddrs populated
+		tx, err := parseTransactionFromBase64(txMap)
+		if err != nil {
+			logger.SolLogger.Warn("parse block failed, parseTransactionFromBase64 failed", "slot", slot, "position", i, "err", err)
+			continue
+		}
+		tx.Position = i
+		tx.Slot = slot
+		tx.Timestamp = b.Timestamp
+		b.Txs = append(b.Txs, tx)
+		// b.RelatedAddrs.Merge(tx.RelatedAddrs) // union addresses across txs
+	}
+	logger.SolLogger.Info("Parsed block cost", "slot", slot, "num_txs", len(b.Txs), "block_time", time.Since(parseBlkTime).String())
+	return b, nil
+}
+
+func GetBlocks(startSlot, count uint64) types.Blocks {
+	if count == 0 {
+		return nil
+	}
+	endSlot := startSlot + count - 1
+	logger.SolLogger.Info("Fetching slots data", "start", startSlot, "end", endSlot, "count", count)
+
+	// Fetch blocks in parallel
+	parallel := config.SOL_FETCH_SLOT_DATA_PARALLEL_NUM
+	// For each slot, retry after failure
+	maxRetry := config.SOL_FETCH_SLOT_DATA_RETRYS
+	slotsQueue := make(chan uint64, int(count*2)) // Slots to fetch
+	blocksCh := make(chan *types.Block, count)    // Fetched Slots
+	retryCounter := make(map[uint64]int)          // Retry counter per slot
+	var retryMu sync.Mutex
+	var fetchedCount atomic.Int32
+	var lock sync.Mutex
+	var wg sync.WaitGroup
+	var closeQueueOnce sync.Once
+	closeQueue := func() { closeQueueOnce.Do(func() { close(slotsQueue) }) }
+
+	// Init slots to fetch
+	go func() {
+		for s := startSlot; s <= endSlot; s++ {
+			slotsQueue <- s
+		}
+	}()
+
+	wg.Add(parallel)
+	for range parallel {
+		go func() {
+			defer wg.Done()
+			for slotId := range slotsQueue {
+				block, err := GetBlock(slotId)
+				if err != nil {
+					errStr := err.Error()
+					if errStr == utils.SKIPPED_BLOCK || errStr == utils.CLEANED_BLOCK {
+						// Known non-retriable errors: count as fetched and move on
+						logger.SolLogger.Warn("getBlock skipped/cleaned, move on", "slot", slotId, "err", err)
+						if fetchedCount.Add(1) >= int32(count) {
+							closeQueue()
+						}
+						continue
+					}
+
+					retryMu.Lock()
+					retryCounter[slotId]++
+					tries := retryCounter[slotId]
+					retryMu.Unlock()
+
+					// Other errors: retry up to maxRetry times
+					if tries <= maxRetry {
+						logger.SolLogger.Warn("retrying getBlock", "slot", slotId, "attempt", tries, "err", err)
+						if fetchedCount.Load() < int32(count) {
+							slotsQueue <- slotId
+						}
+						continue
+					}
+
+					// Exhausted retries
+					logger.SolLogger.Error("getBlock failed after max retry", "slot", slotId, "retries", tries, "err", err)
+					if fetchedCount.Add(1) >= int32(count) {
+						closeQueue()
+					}
+					continue
+				}
+				blocksCh <- block
+
+				// Update progress
+				lock.Lock()
+				fetchedCount.Add(1)
+				if fetchedCount.Load() >= int32(count) {
+					closeQueue()
+				}
+				lock.Unlock()
+			}
+		}()
+	}
+
+	// Close channels when all workers exit
+	go func() {
+		wg.Wait()
+		close(blocksCh)
+	}()
+
+	// Collect results
+	blocks := make(types.Blocks, 0, count)
+	for b := range blocksCh {
+		if b != nil {
+			blocks = append(blocks, b)
+		}
+	}
+
+	// Sort by slot
+	sort.Slice(blocks, func(i, j int) bool { return blocks[i].Slot < blocks[j].Slot })
+	return blocks
+}
+
+// parseTransactionFromBase64 parses a single transaction item from `getBlock` when encoding="base64".
+func parseTransactionFromBase64(txData map[string]any) (*types.Transaction, error) {
+	meta, _ := txData["meta"].(map[string]any)
+	isFailed := (meta != nil && meta["err"] != nil)
+
+	// "transaction": [<base64>, <encoding>] in base64 mode
+	raw, ok := txData["transaction"].([]any)
+	if !ok || len(raw) == 0 {
+		return nil, fmt.Errorf("unexpected transaction field: %T", txData["transaction"])
+	}
+	encoded, _ := raw[0].(string)
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("base64 decode transaction failed: %w", err)
+	}
+	tx, err := solana.TransactionFromDecoder(bin.NewBinDecoder(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode transaction failed: %w", err)
+	}
+
+	// Transaction Id/signature, always the first signature
+	signature := tx.Signatures[0].String()
+	// Basic keys/signers
+	accountKeys := make([]string, 0, len(tx.Message.AccountKeys))
+	for _, k := range tx.Message.AccountKeys {
+		accountKeys = append(accountKeys, k.String())
+	}
+	// Signer is always the first account key
+	signer := accountKeys[0]
+	// Programs list
+	programs := make([]string, len(tx.Message.Instructions))
+	for i, inst := range tx.Message.Instructions {
+		// ProgramIDIndex are indexes into static account keys (programs are also accounts)
+		if int(inst.ProgramIDIndex) < len(accountKeys) {
+			programs[i] = accountKeys[int(inst.ProgramIDIndex)]
+		}
+	}
+
+	// Parse meta data to get Balance changes & ATA owners
+	balanceChange, ataOwner, err := parseBalancesDelta(meta, accountKeys)
+	if err != nil {
+		return nil, fmt.Errorf("parseTransactionMetaData failed: %w", err)
+	}
+
+	// Related addresses (union-find)
+	// related := utils.NewUnionFind[string]()
+	// for _, k := range accountKeys {
+	// 	related.Add(k)
+	// }
+	// for _, k := range combined {
+	// 	related.Add(k)
+	// }
+
+	// Build Transaction
+	return &types.Transaction{
+		// Inside
+		IsFailed:    isFailed,
+		Signature:   signature,
+		AccountKeys: accountKeys,
+		Signer:      signer,
+		// Programs:      FilterPrograms(programs),
+		BalanceChange: balanceChange,
+		AtaOwner:      ataOwner,
+		// RelatedAddrs:  related,
+	}, nil
+}
+
+/*
+Balances example:
+[
+
+	{
+	 "accountIndex": 1, // index into combined account keys (static + loaded), identifying which account this balance belongs to
+	 "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // token mint address
+	 "owner": "AliceWalletPubkey11111111111111111111111111", //	token account owner address
+	 "uiTokenAmount": {
+	   "amount": "5000000",	// raw amount in smallest unit (e.g. 5000000 for 5 USDC with 6 decimals)
+	   "decimals": 6,
+	   "uiAmountString": "5.000000"
+	 },
+	 "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+	}, ...
+
+]
+*/
+func parseBalancesDelta(meta map[string]any, accountKeys []string) (map[string]map[string]float64, map[string]string, error) {
+	if meta == nil {
+		return nil, nil, fmt.Errorf("nil meta")
+	}
+	// Read balances
+	postBalances := meta["postBalances"].([]interface{})
+	postTokenBalances := meta["postTokenBalances"].([]interface{})
+	preBalances := meta["preBalances"].([]interface{})
+	preTokenBalances := meta["preTokenBalances"].([]interface{})
+	// Read loaded addresses (writable + readonly)
+	loaded := meta["loadedAddresses"].(map[string]any)
+	var wr, ro []any
+	if loaded != nil {
+		wr, _ = loaded["writable"].([]any)
+		ro, _ = loaded["readonly"].([]any)
+	}
+	// Combine all accounts
+	// Order: static account keys, writable loaded, readonly loaded
+	accounts := make([]string, 0, len(accountKeys)+len(wr)+len(ro))
+	accounts = append(accounts, accountKeys...)
+	for _, v := range wr {
+		if s, ok := v.(string); ok {
+			accounts = append(accounts, s)
+		} else {
+			return nil, nil, fmt.Errorf("unexpected loaded writable account type: %T", v)
+		}
+	}
+	for _, v := range ro {
+		if s, ok := v.(string); ok {
+			accounts = append(accounts, s)
+		} else {
+			return nil, nil, fmt.Errorf("unexpected loaded readonly account type: %T", v)
+		}
+	}
+
+	// SOL balance deltas
+	balanceChange := make(map[string]map[string]float64)
+	for i, acc := range accounts {
+		balanceChange[acc] = make(map[string]float64)
+		if i < len(preBalances) && i < len(postBalances) {
+			preb := preBalances[i].(float64)
+			postb := postBalances[i].(float64)
+			if preb != postb {
+				balanceChange[acc]["SOL"] = (postb - preb) / utils.SOL_UNIT
+			}
+		}
+	}
+
+	ataOwner := make(map[string]string)
+	// SPL token pre balances
+	for _, tokenBalance := range preTokenBalances {
+		tokenBalance, ok := tokenBalance.(map[string]any)
+		if !ok {
+			continue
+		}
+		idx := int(tokenBalance["accountIndex"].(float64))
+		mint := tokenBalance["mint"].(string)
+		uiTokenAmount := tokenBalance["uiTokenAmount"].(map[string]any)
+		if amount, ok := uiTokenAmount["amount"].(string); ok {
+			amount, _ := strconv.Atoi(amount)
+			balanceChange[accounts[idx]][mint] = float64(amount)
+		} else {
+			balanceChange[accounts[idx]][mint] = 0
+		}
+	}
+
+	// SPL token post balances
+	for _, tokenBalance := range postTokenBalances {
+		tokenBalance, ok := tokenBalance.(map[string]any)
+		if !ok {
+			continue
+		}
+		idx := int(tokenBalance["accountIndex"].(float64))
+		mint := tokenBalance["mint"].(string)
+		owner := tokenBalance["owner"].(string)
+		if idx >= 0 && idx < len(accounts) && owner != "" {
+			// Record ATA owner
+			ataOwner[accounts[idx]] = owner
+		}
+		uiTokenAmount := tokenBalance["uiTokenAmount"].(map[string]any)
+		if amount, ok := uiTokenAmount["amount"].(string); ok {
+			amount, _ := strconv.Atoi(amount)
+			// Calculate delta: post - pre
+			balanceChange[accounts[idx]][mint] = float64(amount) - balanceChange[accounts[idx]][mint]
+		} else {
+			balanceChange[accounts[idx]][mint] = 0 - balanceChange[accounts[idx]][mint]
+		}
+		decimals := int(uiTokenAmount["decimals"].(float64))
+		balanceChange[accounts[idx]][mint] /= math.Pow10(decimals)
+	}
+
+	return balanceChange, ataOwner, nil
+}
+
+// parseTransaction parses a single transaction item from `getBlock` when encoding is JSON (not base64).
+// func parseTransaction(result map[string]interface{}) *Transaction {
+// 	transactionAttr, _ := safeMap(result["transaction"])
+// 	message, _ := safeMap(transactionAttr["message"])
+// 	accountKeysInterface, _ := safeSlice(message["accountKeys"])
+// 	signaturesAny, _ := safeSlice(transactionAttr["signatures"])
+// 	instructionsAny, _ := safeSlice(message["instructions"])
+// 	meta, _ := safeMap(result["meta"])
+
+// 	accountKeys := make([]string, len(accountKeysInterface))
+// 	for i, v := range accountKeysInterface {
+// 		accountKeys[i], _ = v.(string)
+// 	}
+
+// 	programs := make([]string, len(instructionsAny))
+// 	for i, v := range instructionsAny {
+// 		mi, _ := v.(map[string]any)
+// 		idx := asInt(mi["programIdIndex"])
+// 		if 0 <= idx && idx < len(accountKeys) {
+// 			programs[i] = accountKeys[idx]
+// 		}
+// 	}
+
+// 	// Slot/time
+// 	var slot uint64
+// 	var timestamp time.Time
+// 	if v, ok := result["slot"]; ok {
+// 		switch t := v.(type) {
+// 		case float64:
+// 			slot = uint64(t)
+// 		case json.Number:
+// 			if n, e := t.Int64(); e == nil {
+// 				slot = uint64(n)
+// 			}
+// 		}
+// 	}
+// 	if v, ok := result["blockTime"]; ok && v != nil {
+// 		switch t := v.(type) {
+// 		case float64:
+// 			timestamp = time.Unix(int64(t), 0)
+// 		case json.Number:
+// 			if n, e := t.Int64(); e == nil {
+// 				timestamp = time.Unix(n, 0)
+// 			}
+// 		}
+// 	}
+
+// 	// Combined keys for v0
+// 	combined := expandCombinedKeys(accountKeys, meta)
+
+// 	// Related addresses
+// 	related := utils.NewUnionFind[string]()
+// 	for _, k := range accountKeys {
+// 		related.Add(k)
+// 	}
+// 	for _, k := range combined {
+// 		related.Add(k)
+// 	}
+
+// 	// Strong decode is not available in JSON mode without re-encoding; use index heuristics
+// 	for _, v := range instructionsAny {
+// 		mi, _ := v.(map[string]any)
+// 		inst := liteInstruction{
+// 			ProgramIDIndex: asInt(mi["programIdIndex"]),
+// 			Accounts:       asIntSlice(mi["accounts"]),
+// 			DataB64:        strOrEmpty(mi["data"]),
+// 		}
+// 		collectByIndexHeuristicsFromLite(inst, accountKeys, combined, related)
+// 	}
+
+// 	signature := ""
+// 	if len(signaturesAny) > 0 {
+// 		signature, _ = signaturesAny[0].(string)
+// 	}
+// 	signers := accountKeys[:min(len(accountKeys), len(signaturesAny))]
+
+// 	balanceChange, ataOwner := parseAtaBalanceChangeSafe(meta, accountKeys)
+// 	out := &Transaction{
+// 		Slot:          slot,
+// 		Timestamp:     timestamp,
+// 		Signature:     signature,
+// 		Signer:        firstOrEmpty(signers),
+// 		Signers:       signers,
+// 		IsFailed:      meta != nil && meta["err"] != nil,
+// 		Programs:      FilterPrograms(programs),
+// 		AccountKeys:   accountKeys,
+// 		BalanceChange: balanceChange,
+// 		AtaOwner:      ataOwner,
+// 		RelatedAddrs:  related,
+// 	}
+// 	return out
+// }

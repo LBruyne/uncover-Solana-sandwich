@@ -1,22 +1,45 @@
 package types
 
-// type Block struct {
-// 	Slot      uint64
-// 	Timestamp time.Time
-// 	Txs       []*Transaction
-// }
+import (
+	"time"
+)
 
-// type Transaction struct {
-// 	Sandwich
-// 	AtaOwner      map[string]string             `ch:"ataOwner" json:"ataOwner"`
-// 	BalanceChange map[string]map[string]float64 `ch:"balanceChange" json:"balanceChange"`
-// 	Position      int
-// 	Signers       []string
-// }
+type Block struct {
+	Slot        uint64
+	BlockHeight uint64
+	Timestamp   time.Time
+	Txs         []*Transaction
+	// RelatedAddrs *utils.UnionFind[string]
+}
 
-// type Bundle []*Transaction
+type Blocks []*Block
 
-// type Transactions []*Transaction
+type Transaction struct {
+	Slot      uint64 `json:"slot"`
+	Position  int
+	Timestamp time.Time `json:"timestamp"`
+	IsFailed  bool
+
+	// The identifier of this transaction, which is the first signature in Signatures field.
+	// A 64 bytes Ed25519 signature, encoded as a base-58 string.
+	Signature string
+
+	// The account address that signed the transaction and paid the fee, which is thte first account in the AccountKeys array.
+	Signer string
+	// All accounts that signed the transaction and paid the fee
+	AccountKeys []string `json:"accountKeys"`
+	Programs    []string
+
+	// Token/SOL deltas
+	// ata -> owner
+	AtaOwner map[string]string `ch:"ataOwner" json:"ataOwner"`
+	// addr -> (mint/SOL -> delta)
+	BalanceChange map[string]map[string]float64 `ch:"balanceChange" json:"balanceChange"`
+
+	// RelatedAddrs *utils.UnionFind[string]
+}
+
+type Transactions []*Transaction
 
 // func (tx *Transaction) GetPotentialPools() *utils.Set[string] {
 

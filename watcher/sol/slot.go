@@ -25,19 +25,19 @@ func RunSlotCmd(startSlot uint64) error {
 		return fmt.Errorf("failed to get current slot: %w", err)
 	}
 	logger.SolLogger.Info("Current slot from Solana RPC", "slot", currentSlotFromRpc)
-	logger.SolLogger.Info("Fetch slot leaders statistic", "startSlotFromInput", startSlot, "lastSlotInDB", lastSlotInDB, "currentSlotFromRpc", currentSlotFromRpc)
+	logger.SolLogger.Info("Fetch slot leaders statistic", "start_from_input", startSlot, "last_in_DB", lastSlotInDB, "current_from_rpc", currentSlotFromRpc)
 	// Use startSlot, lastSlot, currentSlot to determine the starting point:
 	// 1. if startSlot < lastSlotInDB, set startSlot = lastSlotInDB + 1
 	startSlot = max(startSlot, lastSlotInDB+1)
 	if startSlot > currentSlotFromRpc {
-		logger.SolLogger.Warn("Start slot is greater than current slot, nothing to do", "startSlot", startSlot, "currentSlotFromRpc", currentSlotFromRpc)
+		logger.SolLogger.Warn("Start slot is greater than current slot, nothing to do", "start", startSlot, "current", currentSlotFromRpc)
 		return nil
 	}
 	// 2. if currentSlot - startSlot < max gap, fetch start from startSlot,
 	// otherwise, jump to currentSlot directly
-	if startSlot+config.SOL_FETCH_SLOT_MAX_GAP > currentSlotFromRpc {
+	if startSlot+config.SOL_FETCH_SLOT_LEADER_MAX_GAP > currentSlotFromRpc {
 		// Sync from startSlot
-		logger.SolLogger.Info("Syncing slot leaders", "startSlot", startSlot)
+		logger.SolLogger.Info("Syncing slot leaders", "start", startSlot)
 		for {
 			currentSlotFromRpc, err := GetCurrentSlot()
 			if err != nil {
@@ -46,7 +46,7 @@ func RunSlotCmd(startSlot uint64) error {
 			}
 
 			var limit uint64
-			if startSlot+config.SOL_FETCH_SLOT_LIMIT >= currentSlotFromRpc {
+			if startSlot+config.SOL_FETCH_SLOT_LEADER_LIMIT >= currentSlotFromRpc {
 				limit = currentSlotFromRpc - startSlot + 1
 				logger.SolLogger.Info("Fetch slot leaders (reaching current slot),", "start", startSlot, "current", currentSlotFromRpc, "limit", limit)
 				leaders, err := GetSlotLeaders(startSlot, limit)
@@ -65,7 +65,7 @@ func RunSlotCmd(startSlot uint64) error {
 				break
 			}
 
-			limit = config.SOL_FETCH_SLOT_LIMIT
+			limit = config.SOL_FETCH_SLOT_LEADER_LIMIT
 			logger.SolLogger.Info("Fetch slot leaders", "start", startSlot, "current", currentSlotFromRpc, "limit", limit)
 			leaders, err := GetSlotLeaders(startSlot, limit)
 			if err != nil {
@@ -81,15 +81,15 @@ func RunSlotCmd(startSlot uint64) error {
 			}
 			startSlot += uint64(len(leaders))
 			// Sleep a while to avoid hitting rate limit
-			time.Sleep(config.SOL_FETCH_SLOT_SHORT_INTERVAL)
+			time.Sleep(config.SOL_FETCH_SLOT_LEADER_SHORT_INTERVAL)
 		}
 	} else {
 		startSlot = currentSlotFromRpc
-		logger.SolLogger.Info("Start slot too far behind current slot, start from current slot", "startSlot", startSlot)
+		logger.SolLogger.Info("Start slot too far behind current slot, start from current slot", "start", startSlot)
 	}
 
 	// Sync from currentSlot
-	logger.SolLogger.Info("Syncing slot leaders from RPC current slot", "currentSlot", currentSlotFromRpc)
+	logger.SolLogger.Info("Syncing slot leaders, starting from current slot", "current", currentSlotFromRpc)
 	for {
 		currentSlot, err := GetCurrentSlot()
 		if err != nil {
@@ -97,17 +97,17 @@ func RunSlotCmd(startSlot uint64) error {
 			continue
 		}
 
-		if currentSlot-startSlot < config.SOL_FETCH_SLOT_LOWER {
-			logger.SolLogger.Info("Not enough new slots, sleep and retry after "+config.SOL_FETCH_SLOT_LONG_INTERVAL.String(), "startSlot", startSlot, "currentSlot", currentSlot)
-			time.Sleep(config.SOL_FETCH_SLOT_LONG_INTERVAL)
+		if currentSlot-startSlot < config.SOL_FETCH_SLOT_LEADER_LOWER {
+			logger.SolLogger.Info("Not enough new slots, sleep and retry after "+config.SOL_FETCH_SLOT_LEADER_LONG_INTERVAL.String(), "start", startSlot, "current", currentSlot)
+			time.Sleep(config.SOL_FETCH_SLOT_LEADER_LONG_INTERVAL)
 			continue
 		}
 
 		limit := currentSlot - startSlot + 1
 		// Limit should not exceed SOL_FETCH_SLOT_LIMIT
-		if limit > config.SOL_FETCH_SLOT_LIMIT {
-			logger.SolLogger.Warn("Slot gap too large, capping limit to SOL_FETCH_SLOT_LIMIT", "calculatedLimit", limit, "cappedLimit", config.SOL_FETCH_SLOT_LIMIT)
-			limit = config.SOL_FETCH_SLOT_LIMIT
+		if limit > config.SOL_FETCH_SLOT_LEADER_LIMIT {
+			logger.SolLogger.Warn("Slot gap too large, capping limit to SOL_FETCH_SLOT_LIMIT", "calculatedLimit", limit, "cappedLimit", config.SOL_FETCH_SLOT_LEADER_LIMIT)
+			limit = config.SOL_FETCH_SLOT_LEADER_LIMIT
 		}
 
 		logger.SolLogger.Info("Fetch slot leaders", "start", startSlot, "current", currentSlot, "limit", limit)
@@ -125,7 +125,7 @@ func RunSlotCmd(startSlot uint64) error {
 		}
 		startSlot += uint64(len(leaders))
 		// Sleep a while
-		logger.SolLogger.Info("Sleeping for "+config.SOL_FETCH_SLOT_LONG_INTERVAL.String(), "nextStartSlot", startSlot)
-		time.Sleep(config.SOL_FETCH_SLOT_LONG_INTERVAL)
+		logger.SolLogger.Info("Sleeping for "+config.SOL_FETCH_SLOT_LEADER_LONG_INTERVAL.String(), "next_start", startSlot)
+		time.Sleep(config.SOL_FETCH_SLOT_LEADER_LONG_INTERVAL)
 	}
 }

@@ -20,9 +20,15 @@ const (
 	JITO_RECENT_FETCH_LOWER    = 1000
 	JITO_RECENT_FETCH_INTERVAL = 5 * time.Second
 
-	SOL_FETCH_SLOT_LIMIT          = 5000
-	SOL_FETCH_SLOT_LOWER          = 2000
-	SOL_FETCH_SLOT_MAX_GAP        = 4000000 // the API can preserve data ~0.5 month ago
-	SOL_FETCH_SLOT_SHORT_INTERVAL = 400 * time.Millisecond
-	SOL_FETCH_SLOT_LONG_INTERVAL  = 1000 * time.Second
+	SOL_FETCH_SLOT_LEADER_MAX_GAP        = 4000000 // the API can preserve slot-leader data ~0.5 month ago
+	SOL_FETCH_SLOT_LEADER_LIMIT          = 5000
+	SOL_FETCH_SLOT_LEADER_LOWER          = 2000
+	SOL_FETCH_SLOT_LEADER_SHORT_INTERVAL = 400 * time.Millisecond
+	SOL_FETCH_SLOT_LEADER_LONG_INTERVAL  = 1000 * time.Second
+
+	SOL_FETCH_SLOT_DATA_MAX_GAP      = 60000 // the API can preserve block data ~6 hours ago
+	SOL_FETCH_SLOT_DATA_INTERVAL     = 400 * time.Millisecond
+	SOL_FETCH_SLOT_DATA_SLOT_NUM     = 8 // number of slots to fetch each time
+	SOL_FETCH_SLOT_DATA_PARALLEL_NUM = 8 // number of parallel requests
+	SOL_FETCH_SLOT_DATA_RETRYS       = 3 // number of retries on failure
 )
