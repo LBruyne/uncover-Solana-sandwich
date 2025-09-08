@@ -6,6 +6,7 @@
 .env
 
 *.sql
+!db/create_tables/**.sql
 
 **/**.log
 

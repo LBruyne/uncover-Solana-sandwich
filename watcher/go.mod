@@ -4,6 +4,7 @@ go 1.24
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.1
+	github.com/gagliardetto/binary v0.8.0
 	github.com/gagliardetto/solana-go v1.13.0
 	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.6.1
@@ -16,9 +17,9 @@ require (
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/blendle/zapdriver v1.3.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/deckarep/golang-set/v2 v2.8.0 // indirect
 	github.com/fatih/color v1.9.0 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
-	github.com/gagliardetto/binary v0.8.0 // indirect
 	github.com/gagliardetto/treeout v0.1.4 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect

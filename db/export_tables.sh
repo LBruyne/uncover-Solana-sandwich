@@ -1,9 +1,13 @@
 #!/bin/bash
 
-HOST="http://209.192.245.26:8123"
-USER="sol"
-PASSWORD="sol"
-DATABASE="solwich"
+set -a
+source ../watcher/.env
+set +a
+
+HOST=$CLICKHOUSE_ADDR
+USER=$CLICKHOUSE_USERNAME
+PASSWORD=$CLICKHOUSE_PASSWORD
+DATABASE=$CLICKHOUSE_DATABASE
 OUTPUT_DIR="create_tables"
 
 mkdir -p "$OUTPUT_DIR"

@@ -42,4 +42,6 @@ func main() {
 	if err := cmd.RootCmd.Execute(); err != nil {
 		logger.GlobalLogger.Error("Error executing command", "err", err)
 	}
+
+	logger.CloseAll()
 }
