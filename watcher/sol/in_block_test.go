@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"watcher/logger"
 	"watcher/types"
 )
 
@@ -12,7 +13,8 @@ var slot uint64
 
 func init() {
 	SolonaRpcURL = "http://185.209.179.15:8899"
-	slot = 363597000 // Replace a fresh slot id
+	slot = 366805565 // Replace a fresh slot id
+	logger.InitLogs("test")
 }
 
 // Pretty print sandwich txs

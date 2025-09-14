@@ -4,6 +4,7 @@ import (
 	"math"
 	"watcher/config"
 	"watcher/types"
+	"watcher/utils"
 )
 
 type InBlockSandwichFinder struct {
@@ -192,7 +193,17 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 	if len(frontTxEntries) == 0 || len(backTxEntries) == 0 {
 		return false
 	}
-
+	// Threshold is a percentage, e.g., 5 means 5%, allowed difference in total amount
+	// TODO
+	threshold := f.AmountThreshold
+	if frontTxEntries[0].IncomeToken != utils.SOL {
+		threshold = threshold / 2 // Tighten the threshold for non-SOL token pairs
+	}
+	frontSigner := frontTxEntries[0].Signer
+	backSigner := backTxEntries[0].Signer
+	if frontSigner != backSigner {
+		threshold = 2
+	}
 	// For a pool in frontTx(s), A is incomeToken, B is expenseTokens; in backTx(s), B is incomeToken, A is expenseToken
 	// Check the amount condition: B in front and back have similar trading amounts (within threshold)
 	var frontAmtB float64
@@ -209,7 +220,7 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 	}
 
 	// Check amount similarity
-	similar, relativeAmtDiff := f.HasSimilarAmount(frontAmtB, backAmtB)
+	similar, relativeAmtDiff := f.HasSimilarAmount(frontAmtB, backAmtB, threshold)
 	if !similar {
 		return false // Amount not similar enough
 	}
@@ -296,11 +307,10 @@ func (f *InBlockSandwichFinder) collectVictimEntries(frontTxEntries, backTxEntri
 
 // HasSimilarAmount checks if two amounts are similar within the configured threshold
 // Amount check: |\sum{|frontTx.B_Out|} - \sum{|backTx.B_In|}| / max(\sum{|frontTx.B_Out|}, \sum{|backTx.B_In|}) <= threshold
-func (f *InBlockSandwichFinder) HasSimilarAmount(frontAmt, backAmt float64) (bool, float64) {
+func (f *InBlockSandwichFinder) HasSimilarAmount(frontAmt, backAmt float64, threshold uint) (bool, float64) {
 	if frontAmt <= 0 || backAmt <= 0 {
 		return false, -1.0
 	}
-	threshold := f.AmountThreshold // Allowed difference in total amount
 
 	relativeDiff := f.GetAmountRelativeDifference(frontAmt, backAmt)
 	if relativeDiff < 0 {
@@ -403,7 +413,7 @@ func (f *InBlockSandwichFinder) makeSandwichTx(entry PoolEntry, kind string) *ty
 	orig := f.Txs[entry.TxIdx]
 	var stx *types.SandwichTx
 	switch kind {
-	case "frontRun", "victim":
+	case "frontRun", "victim", "backRun":
 		stx = &types.SandwichTx{
 			Transaction: *orig,
 			SandwichTxTokenInfo: types.SandwichTxTokenInfo{
@@ -411,18 +421,6 @@ func (f *InBlockSandwichFinder) makeSandwichTx(entry PoolEntry, kind string) *ty
 				ToToken:    entry.ExpenseToken,
 				FromAmount: math.Abs(entry.IncomeAmt),
 				ToAmount:   math.Abs(entry.ExpenseAmt),
-			},
-			InBundle: false, // default false
-			Type:     kind,  // "frontRun" / "backRun" / "victim"
-		}
-	case "backRun":
-		stx = &types.SandwichTx{
-			Transaction: *orig,
-			SandwichTxTokenInfo: types.SandwichTxTokenInfo{
-				FromToken:  entry.ExpenseToken,
-				ToToken:    entry.IncomeToken,
-				FromAmount: math.Abs(entry.ExpenseAmt),
-				ToAmount:   math.Abs(entry.IncomeAmt),
 			},
 			InBundle: false, // default false
 			Type:     kind,  // "frontRun" / "backRun" / "victim"

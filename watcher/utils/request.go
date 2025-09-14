@@ -33,7 +33,7 @@ func GetUrlResponseWithRetry(url string, params map[string]string, result any, r
 
 	var lastErr error
 	for i := 0; i < retry; i++ {
-		lastErr = doGet(reqUrl, result, logger)
+		lastErr = doGet(reqUrl, result)
 		if lastErr == nil {
 			return nil
 		}
@@ -50,7 +50,7 @@ func PostUrlResponse(url string, body any, result any, logger *slog.Logger) erro
 func PostUrlResponseWithRetry(url string, body any, result any, retry int, logger *slog.Logger) error {
 	var lastErr error
 	for i := 0; i < retry; i++ {
-		lastErr = doPost(url, body, result, logger)
+		lastErr = doPost(url, body, result)
 		if lastErr == nil {
 			return nil
 		}
@@ -60,7 +60,7 @@ func PostUrlResponseWithRetry(url string, body any, result any, retry int, logge
 	return fmt.Errorf("POST request failed after %d attempts: %w", retry, lastErr)
 }
 
-func doGet(url string, result any, logger *slog.Logger) error {
+func doGet(url string, result any) error {
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancel()
 
@@ -88,7 +88,7 @@ func doGet(url string, result any, logger *slog.Logger) error {
 	return nil
 }
 
-func doPost(url string, body any, result any, logger *slog.Logger) error {
+func doPost(url string, body any, result any) error {
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancel()
 

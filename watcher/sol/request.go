@@ -119,7 +119,6 @@ func GetBlocks(startSlot, count uint64) types.Blocks {
 		return nil
 	}
 	endSlot := startSlot + count - 1
-	logger.SolLogger.Info("Fetching slots data", "start", startSlot, "end", endSlot, "count", count)
 
 	// Fetch blocks in parallel
 	parallel := config.SOL_FETCH_SLOT_DATA_PARALLEL_NUM
@@ -214,8 +213,6 @@ func GetBlocks(startSlot, count uint64) types.Blocks {
 }
 
 func GetBlock(slot uint64) (*types.Block, error) {
-	logger.SolLogger.Info("Fetching block", "slot", slot)
-
 	params := []interface{}{
 		slot,
 		map[string]interface{}{

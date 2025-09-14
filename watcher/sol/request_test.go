@@ -3,10 +3,12 @@ package sol
 import (
 	"fmt"
 	"testing"
+	"watcher/logger"
 )
 
 func init() {
 	SolonaRpcURL = "http://185.209.179.15:8899"
+	logger.InitLogs("test")
 }
 
 func TestGetSlotLeadersRealAPI(t *testing.T) {
@@ -14,7 +16,7 @@ func TestGetSlotLeadersRealAPI(t *testing.T) {
 		t.Skip("SolanaRpcURL not configured, skipping real API test")
 	}
 
-	start := uint64(363000000)
+	start := uint64(366000000)
 	limit := uint64(10)
 
 	fmt.Println("Testing real getSlotLeaders RPC...")
