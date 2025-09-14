@@ -1,0 +1,22 @@
+-- CREATE TABLE IF NOT EXISTS solwich.sandwiches
+-- (
+--     `slot` UInt64,
+--     `inBundle` Bool,
+--     `timestamp` DateTime,
+--     `signature` String,
+--     `position` Int32,
+--     `type` String,
+--     `signer` String,
+--     `consecutive` Bool,
+--     `programs` Array(String),
+--     `accountKeys` Array(String),
+--     `fromToken` String,
+--     `toToken` String,
+--     `fromAmount` Float64,
+--     `toAmount` Float64,
+--     `fromDiff` Float64,
+--     `toDiff` Float64
+-- )
+-- ENGINE = MergeTree
+-- ORDER BY timestamp
+-- SETTINGS index_granularity = 8192

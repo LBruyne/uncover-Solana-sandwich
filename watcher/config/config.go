@@ -12,6 +12,7 @@ const (
 	MIN_START_SLOT = 340000000
 )
 
+// Fetch config
 const (
 	// Averagely 60-80 bundles in a slot
 	// A slot is 0.4s
@@ -28,7 +29,17 @@ const (
 
 	SOL_FETCH_SLOT_DATA_MAX_GAP      = 60000 // the API can preserve block data ~6 hours ago
 	SOL_FETCH_SLOT_DATA_INTERVAL     = 400 * time.Millisecond
-	SOL_FETCH_SLOT_DATA_SLOT_NUM     = 8 // number of slots to fetch each time
-	SOL_FETCH_SLOT_DATA_PARALLEL_NUM = 8 // number of parallel requests
-	SOL_FETCH_SLOT_DATA_RETRYS       = 3 // number of retries on failure
+	SOL_FETCH_SLOT_DATA_SLOT_NUM     = 16 // number of slots to fetch each time
+	SOL_FETCH_SLOT_DATA_PARALLEL_NUM = 8  // number of parallel requests
+	SOL_FETCH_SLOT_DATA_RETRYS       = 3  // number of retries on failure
+
+)
+
+// Detection config
+const (
+	SOL_PROCESS_IN_BLOCK_SANDWICH_PARALLEL_NUM = 8 // number of parallel processing in-block sandwiches
+
+	SANDWICH_AMOUNT_THRESHOLD = uint(10) // relative threshold between front-run/back-run
+	SANDWICH_BACKRUN_MAX_GAP  = 10       // How long can two back-run txs be apart
+	SANDWICH_FRONTRUN_MAX_GAP = 10       // How long can two front-run txs be apart
 )

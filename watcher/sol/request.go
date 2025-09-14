@@ -114,6 +114,105 @@ func GetCurrentSlot() (uint64, error) {
 	return uint64(slot), nil
 }
 
+func GetBlocks(startSlot, count uint64) types.Blocks {
+	if count == 0 {
+		return nil
+	}
+	endSlot := startSlot + count - 1
+	logger.SolLogger.Info("Fetching slots data", "start", startSlot, "end", endSlot, "count", count)
+
+	// Fetch blocks in parallel
+	parallel := config.SOL_FETCH_SLOT_DATA_PARALLEL_NUM
+	// For each slot, retry after failure
+	maxRetry := config.SOL_FETCH_SLOT_DATA_RETRYS
+	slotsQueue := make(chan uint64, int(count*2)) // Slots to fetch, 2x buffer to avoid blocking retries
+	blocksCh := make(chan *types.Block, count)    // Fetched Slots
+	retryCounter := make(map[uint64]int)          // Retry counter per slot
+	var retryMu sync.Mutex
+	var fetchedCount atomic.Int32
+	var lock sync.Mutex
+	var wg sync.WaitGroup
+	var closeQueueOnce sync.Once
+	closeQueue := func() { closeQueueOnce.Do(func() { close(slotsQueue) }) }
+
+	// Init slots to fetch
+	go func() {
+		for s := startSlot; s <= endSlot; s++ {
+			slotsQueue <- s
+		}
+	}()
+
+	wg.Add(parallel)
+	for range parallel {
+		go func() {
+			defer wg.Done()
+			for slotId := range slotsQueue {
+				// Fetch block
+				block, err := GetBlock(slotId)
+				if err != nil {
+					errStr := err.Error()
+					if errStr == utils.SKIPPED_BLOCK || errStr == utils.CLEANED_BLOCK {
+						// Known non-retriable errors: count as fetched and move on
+						logger.SolLogger.Warn("getBlock skipped/cleaned, move on", "slot", slotId, "err", err)
+						if fetchedCount.Add(1) >= int32(count) {
+							closeQueue()
+						}
+						continue
+					}
+
+					retryMu.Lock()
+					retryCounter[slotId]++
+					tries := retryCounter[slotId]
+					retryMu.Unlock()
+
+					// Other errors: retry up to maxRetry times
+					if tries <= maxRetry {
+						logger.SolLogger.Warn("retrying getBlock", "slot", slotId, "attempt", tries, "err", err)
+						if fetchedCount.Load() < int32(count) {
+							slotsQueue <- slotId
+						}
+						continue
+					}
+
+					// Exhausted retries
+					logger.SolLogger.Error("getBlock failed after max retry", "slot", slotId, "retries", tries, "err", err)
+					if fetchedCount.Add(1) >= int32(count) {
+						closeQueue()
+					}
+					continue
+				}
+				blocksCh <- block
+
+				// Update progress
+				lock.Lock()
+				fetchedCount.Add(1)
+				if fetchedCount.Load() >= int32(count) {
+					closeQueue()
+				}
+				lock.Unlock()
+			}
+		}()
+	}
+
+	// Close channels when all workers exit
+	go func() {
+		wg.Wait()
+		close(blocksCh)
+	}()
+
+	// Collect results
+	blocks := make(types.Blocks, 0, count)
+	for b := range blocksCh {
+		if b != nil {
+			blocks = append(blocks, b)
+		}
+	}
+
+	// Sort by slot
+	sort.Slice(blocks, func(i, j int) bool { return blocks[i].Slot < blocks[j].Slot })
+	return blocks
+}
+
 func GetBlock(slot uint64) (*types.Block, error) {
 	logger.SolLogger.Info("Fetching block", "slot", slot)
 
@@ -221,109 +320,12 @@ func GetBlock(slot uint64) (*types.Block, error) {
 		tx.Position = i
 		tx.Slot = slot
 		tx.Timestamp = b.Timestamp
+		tx.PostprocessForFindSandwich()
 		b.Txs = append(b.Txs, tx)
 		// b.RelatedAddrs.Merge(tx.RelatedAddrs) // union addresses across txs
 	}
 	logger.SolLogger.Info("Parsed block cost", "slot", slot, "num_txs", len(b.Txs), "block_time", time.Since(parseBlkTime).String())
 	return b, nil
-}
-
-func GetBlocks(startSlot, count uint64) types.Blocks {
-	if count == 0 {
-		return nil
-	}
-	endSlot := startSlot + count - 1
-	logger.SolLogger.Info("Fetching slots data", "start", startSlot, "end", endSlot, "count", count)
-
-	// Fetch blocks in parallel
-	parallel := config.SOL_FETCH_SLOT_DATA_PARALLEL_NUM
-	// For each slot, retry after failure
-	maxRetry := config.SOL_FETCH_SLOT_DATA_RETRYS
-	slotsQueue := make(chan uint64, int(count*2)) // Slots to fetch
-	blocksCh := make(chan *types.Block, count)    // Fetched Slots
-	retryCounter := make(map[uint64]int)          // Retry counter per slot
-	var retryMu sync.Mutex
-	var fetchedCount atomic.Int32
-	var lock sync.Mutex
-	var wg sync.WaitGroup
-	var closeQueueOnce sync.Once
-	closeQueue := func() { closeQueueOnce.Do(func() { close(slotsQueue) }) }
-
-	// Init slots to fetch
-	go func() {
-		for s := startSlot; s <= endSlot; s++ {
-			slotsQueue <- s
-		}
-	}()
-
-	wg.Add(parallel)
-	for range parallel {
-		go func() {
-			defer wg.Done()
-			for slotId := range slotsQueue {
-				block, err := GetBlock(slotId)
-				if err != nil {
-					errStr := err.Error()
-					if errStr == utils.SKIPPED_BLOCK || errStr == utils.CLEANED_BLOCK {
-						// Known non-retriable errors: count as fetched and move on
-						logger.SolLogger.Warn("getBlock skipped/cleaned, move on", "slot", slotId, "err", err)
-						if fetchedCount.Add(1) >= int32(count) {
-							closeQueue()
-						}
-						continue
-					}
-
-					retryMu.Lock()
-					retryCounter[slotId]++
-					tries := retryCounter[slotId]
-					retryMu.Unlock()
-
-					// Other errors: retry up to maxRetry times
-					if tries <= maxRetry {
-						logger.SolLogger.Warn("retrying getBlock", "slot", slotId, "attempt", tries, "err", err)
-						if fetchedCount.Load() < int32(count) {
-							slotsQueue <- slotId
-						}
-						continue
-					}
-
-					// Exhausted retries
-					logger.SolLogger.Error("getBlock failed after max retry", "slot", slotId, "retries", tries, "err", err)
-					if fetchedCount.Add(1) >= int32(count) {
-						closeQueue()
-					}
-					continue
-				}
-				blocksCh <- block
-
-				// Update progress
-				lock.Lock()
-				fetchedCount.Add(1)
-				if fetchedCount.Load() >= int32(count) {
-					closeQueue()
-				}
-				lock.Unlock()
-			}
-		}()
-	}
-
-	// Close channels when all workers exit
-	go func() {
-		wg.Wait()
-		close(blocksCh)
-	}()
-
-	// Collect results
-	blocks := make(types.Blocks, 0, count)
-	for b := range blocksCh {
-		if b != nil {
-			blocks = append(blocks, b)
-		}
-	}
-
-	// Sort by slot
-	sort.Slice(blocks, func(i, j int) bool { return blocks[i].Slot < blocks[j].Slot })
-	return blocks
 }
 
 // parseTransactionFromBase64 parses a single transaction item from `getBlock` when encoding="base64".
@@ -363,33 +365,27 @@ func parseTransactionFromBase64(txData map[string]any) (*types.Transaction, erro
 			programs[i] = accountKeys[int(inst.ProgramIDIndex)]
 		}
 	}
+	// IsVote transaction
+	isVote := (len(programs) == 1 && programs[0] == utils.VOTE_PROGRAM)
 
 	// Parse meta data to get Balance changes & ATA owners
-	balanceChange, ataOwner, err := parseBalancesDelta(meta, accountKeys)
+	ownerBalanceChanges, ownerPreBalances, ataOwner, err := parseBalancesDelta(meta, accountKeys)
 	if err != nil {
 		return nil, fmt.Errorf("parseTransactionMetaData failed: %w", err)
 	}
 
-	// Related addresses (union-find)
-	// related := utils.NewUnionFind[string]()
-	// for _, k := range accountKeys {
-	// 	related.Add(k)
-	// }
-	// for _, k := range combined {
-	// 	related.Add(k)
-	// }
-
 	// Build Transaction
 	return &types.Transaction{
 		// Inside
-		IsFailed:    isFailed,
-		Signature:   signature,
-		AccountKeys: accountKeys,
-		Signer:      signer,
-		// Programs:      FilterPrograms(programs),
-		BalanceChange: balanceChange,
-		AtaOwner:      ataOwner,
-		// RelatedAddrs:  related,
+		IsFailed:            isFailed,
+		IsVote:              isVote,
+		Signature:           signature,
+		AccountKeys:         accountKeys,
+		Signer:              signer,
+		Programs:            programs,
+		OwnerBalanceChanges: ownerBalanceChanges,
+		OwnerPreBalances:    ownerPreBalances,
+		AtaOwner:            ataOwner,
 	}, nil
 }
 
@@ -397,9 +393,10 @@ func parseTransactionFromBase64(txData map[string]any) (*types.Transaction, erro
 Balances example:
 [
 
+	// Alice's token account has 5 USDC (6 decimals)
 	{
-	 "accountIndex": 1, // index into combined account keys (static + loaded), identifying which account this balance belongs to
-	 "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // token mint address
+	 "accountIndex": 1, // index into combined account keys (static + loaded) to get the token account
+	 "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // token address
 	 "owner": "AliceWalletPubkey11111111111111111111111111", //	token account owner address
 	 "uiTokenAmount": {
 	   "amount": "5000000",	// raw amount in smallest unit (e.g. 5000000 for 5 USDC with 6 decimals)
@@ -411,15 +408,27 @@ Balances example:
 
 ]
 */
-func parseBalancesDelta(meta map[string]any, accountKeys []string) (map[string]map[string]float64, map[string]string, error) {
+func parseBalancesDelta(meta map[string]any, accountKeys []string) (map[string]map[string]types.AtaAmounts, map[string]map[string]float64, map[string]string, error) {
 	if meta == nil {
-		return nil, nil, fmt.Errorf("nil meta")
+		return nil, nil, nil, fmt.Errorf("nil meta")
 	}
 	// Read balances
-	postBalances := meta["postBalances"].([]interface{})
-	postTokenBalances := meta["postTokenBalances"].([]interface{})
-	preBalances := meta["preBalances"].([]interface{})
-	preTokenBalances := meta["preTokenBalances"].([]interface{})
+	postBalances, ok := meta["postBalances"].([]interface{})
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("invalid postBalances")
+	}
+	postTokenBalances, ok := meta["postTokenBalances"].([]interface{})
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("invalid postTokenBalances")
+	}
+	preBalances, ok := meta["preBalances"].([]interface{})
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("invalid preBalances")
+	}
+	preTokenBalances, ok := meta["preTokenBalances"].([]interface{})
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("invalid preTokenBalances")
+	}
 	// Read loaded addresses (writable + readonly)
 	loaded := meta["loadedAddresses"].(map[string]any)
 	var wr, ro []any
@@ -435,74 +444,123 @@ func parseBalancesDelta(meta map[string]any, accountKeys []string) (map[string]m
 		if s, ok := v.(string); ok {
 			accounts = append(accounts, s)
 		} else {
-			return nil, nil, fmt.Errorf("unexpected loaded writable account type: %T", v)
+			return nil, nil, nil, fmt.Errorf("unexpected loaded writable account type: %T", v)
 		}
 	}
 	for _, v := range ro {
 		if s, ok := v.(string); ok {
 			accounts = append(accounts, s)
 		} else {
-			return nil, nil, fmt.Errorf("unexpected loaded readonly account type: %T", v)
+			return nil, nil, nil, fmt.Errorf("unexpected loaded readonly account type: %T", v)
 		}
 	}
 
+	ownerBalanceChanges := make(map[string]map[string]types.AtaAmounts)
+	ownerPreBalances := make(map[string]map[string]float64)
 	// SOL balance deltas
-	balanceChange := make(map[string]map[string]float64)
 	for i, acc := range accounts {
-		balanceChange[acc] = make(map[string]float64)
-		if i < len(preBalances) && i < len(postBalances) {
-			preb := preBalances[i].(float64)
-			postb := postBalances[i].(float64)
-			if preb != postb {
-				balanceChange[acc]["SOL"] = (postb - preb) / utils.SOL_UNIT
-			}
+		if i >= len(preBalances) || i >= len(postBalances) {
+			continue
 		}
+
+		preb := preBalances[i].(float64)
+		postb := postBalances[i].(float64)
+		deltaSOL := (postb - preb) / utils.SOL_UNIT
+		// Skip zero changes
+		if deltaSOL == 0 {
+			continue
+		}
+
+		owner := acc
+		if _, ok := ownerBalanceChanges[owner]; !ok {
+			ownerBalanceChanges[owner] = make(map[string]types.AtaAmounts)
+		}
+		ownerBalanceChanges[owner][utils.SOL] = types.AtaAmounts{
+			AtaAddress:  []string{acc},
+			Amount:      []float64{deltaSOL},
+			TotalAmount: deltaSOL,
+		}
+		if _, ok := ownerPreBalances[owner]; !ok {
+			ownerPreBalances[owner] = make(map[string]float64)
+		}
+		ownerPreBalances[owner][utils.SOL] += float64(preb) / utils.SOL_UNIT
 	}
 
 	ataOwner := make(map[string]string)
-	// SPL token pre balances
+	// SPL token balance deltas
+	// Pre balances
+	ataPreBalances := make(map[string]map[string]float64) // ata -> token -> amount
 	for _, tokenBalance := range preTokenBalances {
 		tokenBalance, ok := tokenBalance.(map[string]any)
 		if !ok {
 			continue
 		}
-		idx := int(tokenBalance["accountIndex"].(float64))
-		mint := tokenBalance["mint"].(string)
-		uiTokenAmount := tokenBalance["uiTokenAmount"].(map[string]any)
-		if amount, ok := uiTokenAmount["amount"].(string); ok {
-			amount, _ := strconv.Atoi(amount)
-			balanceChange[accounts[idx]][mint] = float64(amount)
-		} else {
-			balanceChange[accounts[idx]][mint] = 0
+		ataIdx := int(tokenBalance["accountIndex"].(float64))
+		if ataIdx < 0 || ataIdx >= len(accounts) {
+			continue
 		}
+		ataAddr := accounts[ataIdx]
+		tokenAddr, _ := tokenBalance["mint"].(string)
+		uiTokenAmount, _ := tokenBalance["uiTokenAmount"].(map[string]any)
+		amount, _ := uiTokenAmount["amount"].(string)
+		amountInt, _ := strconv.Atoi(amount)
+		preb := float64(amountInt)
+		// Use ataBalancePre to (temporarily) record pre balance for this ata-token
+		if _, ok := ataPreBalances[ataAddr]; !ok {
+			ataPreBalances[ataAddr] = make(map[string]float64)
+		}
+		ataPreBalances[ataAddr][tokenAddr] = float64(preb)
 	}
 
-	// SPL token post balances
+	// Post balances
 	for _, tokenBalance := range postTokenBalances {
 		tokenBalance, ok := tokenBalance.(map[string]any)
 		if !ok {
 			continue
 		}
-		idx := int(tokenBalance["accountIndex"].(float64))
-		mint := tokenBalance["mint"].(string)
+		ataIdx := int(tokenBalance["accountIndex"].(float64))
+		if ataIdx < 0 || ataIdx >= len(accounts) {
+			continue
+		}
+		ataAddr := accounts[ataIdx]
+		tokenAddr := tokenBalance["mint"].(string)
 		owner := tokenBalance["owner"].(string)
-		if idx >= 0 && idx < len(accounts) && owner != "" {
-			// Record ATA owner
-			ataOwner[accounts[idx]] = owner
-		}
 		uiTokenAmount := tokenBalance["uiTokenAmount"].(map[string]any)
-		if amount, ok := uiTokenAmount["amount"].(string); ok {
-			amount, _ := strconv.Atoi(amount)
-			// Calculate delta: post - pre
-			balanceChange[accounts[idx]][mint] = float64(amount) - balanceChange[accounts[idx]][mint]
-		} else {
-			balanceChange[accounts[idx]][mint] = 0 - balanceChange[accounts[idx]][mint]
-		}
+		amount, _ := uiTokenAmount["amount"].(string)
 		decimals := int(uiTokenAmount["decimals"].(float64))
-		balanceChange[accounts[idx]][mint] /= math.Pow10(decimals)
+		amountInt, _ := strconv.Atoi(amount)
+		postb := float64(amountInt)
+
+		// Record ATA owner
+		if owner == "" {
+			owner = ataAddr // fallback to self if owner missing
+		}
+		ataOwner[ataAddr] = owner
+		// Record owner balance change
+		preb := ataPreBalances[ataAddr][tokenAddr]
+		delta := float64(postb-preb) / math.Pow10(decimals)
+		if delta == 0 {
+			continue
+		}
+
+		if _, ok := ownerBalanceChanges[owner]; !ok {
+			ownerBalanceChanges[owner] = make(map[string]types.AtaAmounts)
+			ownerBalanceChanges[owner][tokenAddr] = types.AtaAmounts{
+				AtaAddress:  []string{},
+				Amount:      []float64{},
+				TotalAmount: 0,
+			}
+		}
+		bc := ownerBalanceChanges[owner][tokenAddr]
+		bc.AddAtaAmount(ataAddr, delta)
+		ownerBalanceChanges[owner][tokenAddr] = bc
+		if _, ok := ownerPreBalances[owner]; !ok {
+			ownerPreBalances[owner] = make(map[string]float64)
+		}
+		ownerPreBalances[owner][tokenAddr] += float64(preb) / math.Pow10(decimals)
 	}
 
-	return balanceChange, ataOwner, nil
+	return ownerBalanceChanges, ownerPreBalances, ataOwner, nil
 }
 
 // parseTransaction parses a single transaction item from `getBlock` when encoding is JSON (not base64).

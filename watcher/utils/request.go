@@ -14,7 +14,7 @@ import (
 const (
 	DefaultRetryTimes    = 5
 	DefaultRetryInterval = 100 * time.Millisecond
-	DefaultTimeout       = 10 * time.Second
+	DefaultTimeout       = 5 * time.Second
 )
 
 func GetUrlResponse(url string, params map[string]string, result any, logger *slog.Logger) error {
@@ -80,13 +80,9 @@ func doGet(url string, result any, logger *slog.Logger) error {
 		return fmt.Errorf("GET request returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read GET response body: %w", err)
-	}
-
-	if err := json.Unmarshal(bodyBytes, result); err != nil {
-		return fmt.Errorf("failed to unmarshal GET response: %w", err)
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(result); err != nil {
+		return fmt.Errorf("failed to stream and unmarshal GET response: %w", err)
 	}
 
 	return nil
@@ -118,13 +114,9 @@ func doPost(url string, body any, result any, logger *slog.Logger) error {
 		return fmt.Errorf("POST request returned status %d: %s", resp.StatusCode, string(bodyResp))
 	}
 
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read POST response body: %w", err)
-	}
-
-	if err := json.Unmarshal(respBytes, result); err != nil {
-		return fmt.Errorf("failed to unmarshal POST response: %w", err)
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(result); err != nil {
+		return fmt.Errorf("failed to stream and unmarshal POST response: %w", err)
 	}
 
 	return nil

@@ -1,0 +1,21 @@
+-- CREATE TABLE solwich.sandwiches_jito
+-- (
+--     `slot` UInt64,
+--     `timestamp` DateTime,
+--     `signature` String,
+--     `bundleId` String,
+--     `type` String,
+--     `signer` String,
+--     `signerSame` Bool,
+--     `programs` Array(String),
+--     `accountKeys` Array(String),
+--     `fromToken` String,
+--     `toToken` String,
+--     `fromAmount` Float64,
+--     `toAmount` Float64,
+--     `fromDiff` Float64,
+--     `toDiff` Float64
+-- )
+-- ENGINE = MergeTree
+-- ORDER BY timestamp
+-- SETTINGS index_granularity = 8192
