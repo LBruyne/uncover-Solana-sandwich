@@ -47,6 +47,15 @@ func (d *ClickhouseDB) Close() error {
 	return d.conn.Close()
 }
 
+func (d *ClickhouseDB) EnsureDatabaseExists() error {
+	query := `CREATE DATABASE IF NOT EXISTS solwich`
+	if err := d.conn.Exec(context.Background(), query); err != nil {
+		return fmt.Errorf("failed to ensure database exists: %w", err)
+	}
+	logger.GlobalLogger.Info("Database ensured to exist", "database", "solwich")
+	return nil
+}
+
 func (d *ClickhouseDB) CreateTables() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS solwich.jito_bundles

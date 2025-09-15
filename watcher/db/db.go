@@ -6,6 +6,7 @@ import (
 
 type Database interface {
 	Close() error
+	EnsureDatabaseExists() error
 	CreateTables() error
 	// QueryLastSandwichNoBundle() (uint64, time.Time, error)
 	// QueryLastSlotLeader() (uint64, error)

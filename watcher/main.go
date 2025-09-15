@@ -30,10 +30,16 @@ func initDB() {
 	ch := db.NewClickhouse()
 	defer ch.Close()
 
+	logger.GlobalLogger.Info("Try to ensure database and tables exist")
+
+	if err := ch.EnsureDatabaseExists(); err != nil {
+		logger.GlobalLogger.Error("Failed to ensure database", "err", err)
+		return
+	}
+
 	if err := ch.CreateTables(); err != nil {
 		logger.GlobalLogger.Error("Failed to create tables", "err", err)
 	}
-	logger.GlobalLogger.Info("Database tables ensured")
 }
 
 func main() {
