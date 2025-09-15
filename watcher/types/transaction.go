@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+	"strings"
 	"time"
 	"watcher/utils"
 
@@ -181,4 +183,98 @@ func (p *AtaAmounts) AddAtaAmount(ata string, amount float64) {
 
 func (p *AtaAmounts) GetTotalAmount() float64 {
 	return p.TotalAmount
+}
+
+// Pretty Print block and its transactions
+func PPBlock(b *Block, txLimit int) {
+	if b == nil {
+		return
+	}
+	ts := "-"
+	if !b.Timestamp.IsZero() {
+		ts = b.Timestamp.Format(time.RFC3339)
+	}
+	fmt.Printf("==== Block #%d ====\n", b.Slot)
+	fmt.Printf("slot=%d  height=%d  time=%s  txs=%d\n",
+		b.Slot, b.BlockHeight, ts, len(b.Txs))
+
+	n := len(b.Txs)
+	if txLimit > 0 && txLimit < n {
+		n = txLimit
+	}
+	for i := 0; i < n; i++ {
+		PPTx(i, b.Txs[i])
+	}
+	fmt.Println()
+}
+
+// Pretty Print a transaction
+func PPTx(i int, tx *Transaction) {
+	if tx == nil {
+		return
+	}
+	fmt.Printf("  -- Tx[%d] pos=%d sig=%s signer=%s\n",
+		i, tx.Position, shorten(tx.Signature, 8), shorten(tx.Signer, 8))
+	fmt.Printf("     flags: failed=%v vote=%v  programs=%d  accountKeys=%d\n",
+		tx.IsFailed, tx.IsVote, len(tx.Programs), len(tx.AccountKeys))
+
+	// Related tokens
+	tokens := tx.RelatedTokens.ToSlice()
+	if len(tokens) > 0 {
+		fmt.Printf("     relatedTokens: %s\n", strings.Join(tokens, ", "))
+	}
+
+	// Related pools
+	pools := tx.RelatedPools.ToSlice()
+	if len(pools) > 0 {
+		fmt.Printf("     relatedPools (%d):\n", len(pools))
+		for _, p := range pools {
+			if pa, ok := tx.RelatedPoolsInfo[p]; ok {
+				dir := fmt.Sprintf("%s -> %s", pa.IncomeToken, pa.ExpenseToken)
+				fmt.Printf("       - %s  dir=%s  income=%.9f  expense=%.9f\n",
+					p, dir, pa.IncomeAmt, pa.ExpenseAmt)
+			} else {
+				fmt.Printf("       - %s\n", p)
+			}
+		}
+	}
+
+	// Owner balance changes
+	if len(tx.OwnerBalanceChanges) > 0 {
+		fmt.Printf("     ownerBalanceChanges:\n")
+		for owner, tokenMap := range tx.OwnerBalanceChanges {
+			parts := make([]string, 0, len(tokenMap))
+			for token, aa := range tokenMap {
+				if aa.TotalAmount == 0 {
+					continue
+				}
+				parts = append(parts, fmt.Sprintf("%s: %.9f", token, aa.TotalAmount))
+			}
+			if len(parts) > 0 {
+				fmt.Printf("       - %s  [%s]\n", shorten(owner, 12), strings.Join(parts, ", "))
+			}
+		}
+	}
+
+	if len(tx.AtaOwner) > 0 {
+		fmt.Printf("     ataOwner (%d):\n", len(tx.AtaOwner))
+		count := 0
+		for ata, owner := range tx.AtaOwner {
+			fmt.Printf("       - %s -> %s\n", shorten(ata, 12), shorten(owner, 12))
+			count++
+			if count >= 6 { // limit output
+				if len(tx.AtaOwner) > count {
+					fmt.Printf("         ... and %d more\n", len(tx.AtaOwner)-count)
+				}
+				break
+			}
+		}
+	}
+}
+
+func shorten(s string, n int) string {
+	if n <= 3 || len(s) <= n {
+		return s
+	}
+	return s[:n-3] + "..."
 }

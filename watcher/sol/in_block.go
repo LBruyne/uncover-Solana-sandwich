@@ -194,7 +194,7 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 		return false
 	}
 	// Threshold is a percentage, e.g., 5 means 5%, allowed difference in total amount
-	// TODO
+	// TODO: how to identify similar-amount non-sandwich?
 	threshold := f.AmountThreshold
 	if frontTxEntries[0].IncomeToken != utils.SOL {
 		threshold = threshold / 2 // Tighten the threshold for non-SOL token pairs
@@ -205,7 +205,7 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 		threshold = 2
 	}
 	// For a pool in frontTx(s), A is incomeToken, B is expenseTokens; in backTx(s), B is incomeToken, A is expenseToken
-	// Check the amount condition: B in front and back have similar trading amounts (within threshold)
+	// Check the amount condition: B in front and back have valid and similar trading amounts (within threshold)
 	var frontAmtB float64
 	for _, fe := range frontTxEntries {
 		if fe.ExpenseAmt < 0 {
@@ -218,13 +218,16 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 			backAmtB += be.IncomeAmt
 		}
 	}
-
+	// Check backAmtB <= frontAmtB
+	if backAmtB > frontAmtB {
+		return false // Back amount B cannot be greater than front amount B
+	}
 	// Check amount similarity
 	similar, relativeAmtDiff := f.HasSimilarAmount(frontAmtB, backAmtB, threshold)
 	if !similar {
 		return false // Amount not similar enough
 	}
-	perfect := (relativeAmtDiff <= 0.01) // Perfect if relative difference ~= 0
+	perfect := (relativeAmtDiff <= 0.001) // Perfect if relative difference ~= 0
 
 	// Check victim txs between front and back
 	victimEntries := f.collectVictimEntries(frontTxEntries, backTxEntries)

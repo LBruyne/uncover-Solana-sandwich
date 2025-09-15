@@ -2,6 +2,7 @@ package sol
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 	"watcher/config"
@@ -47,23 +48,24 @@ func RunSandwichCmd(startSlot uint64) error {
 		fetchTime := time.Since(fetchTimeBefore)
 		logger.SolLogger.Info("Fetched slot data (done)", "start", startSlot, "num_fetched", len(blocks), "fetch_time", fetchTime.String())
 
-		// Test print
-		fmt.Println("fetched blocks:")
+		// Test print block
 		for _, b := range blocks {
-			logger.SolLogger.Info("Block", "slot", b.Slot, "block_height", b.BlockHeight, "num_txs", len(b.Txs), "timestamp", b.Timestamp.String())
-			for i, tx := range b.Txs {
-				if i <= 1 {
-					logger.SolLogger.Info("Tx", "slot", tx.Slot, "signature", tx.Signature, "signer", tx.Signer, "is_failed", tx.IsFailed, "is_vote", tx.IsVote, "num_account_keys", len(tx.AccountKeys), "ata_owner", tx.AtaOwner, "owner_balance_changes", tx.OwnerBalanceChanges, "related_tokens", tx.RelatedTokens.ToSlice(), "related_pools", tx.RelatedPools.ToSlice(), "related_pools_info", tx.RelatedPoolsInfo)
-				}
-			}
+			types.PPBlock(b, 1)
 		}
 
 		// Process blocks to find sandwiches
 		logger.SolLogger.Info("Process slot data (start)", "start", startSlot, "num_fetched", len(blocks))
-		processTimeBefore := time.Now()
-		ProcessBlocksForSandwich(blocks)
-		processTime := time.Since(processTimeBefore)
-		logger.SolLogger.Info("Processed slot data (done)", "start", startSlot, "num_fetched", len(blocks), "process_time", processTime.String())
+		timeProess := time.Now()
+		inBlockSandwiches, crossBlockSandwiches := ProcessBlocksForSandwich(blocks)
+		logger.SolLogger.Info("Process slot data (done)", "start", startSlot, "num_in_block_sandwiches", len(inBlockSandwiches), "num_cross_block_sandwiches", len(crossBlockSandwiches), "process_time", time.Since(timeProess).String())
+
+		// Test print sandwiches
+		for i, s := range inBlockSandwiches {
+			types.PPInBlockSandwich(i+1, s)
+		}
+		for i, s := range crossBlockSandwiches {
+			types.PPCrossBlockSandwich(i+1, s)
+		}
 
 		// Update next start slot
 		startSlot += uint64(len(blocks))
@@ -74,16 +76,30 @@ func RunSandwichCmd(startSlot uint64) error {
 	}
 }
 
-func ProcessBlocksForSandwich(blocks types.Blocks) {
+func ProcessBlocksForSandwich(blocks types.Blocks) (inBlock []*types.InBlockSandwich, crossBlock []*types.CrossBlockSandwich) {
 	var wg sync.WaitGroup
+	inCh := make(chan []*types.InBlockSandwich, 1)
+	crCh := make(chan []*types.CrossBlockSandwich, 1)
 	wg.Add(1)
-	go func() { ProcessInBlockSandwich(blocks, &wg) }()
+	go func() { inCh <- ProcessInBlockSandwich(blocks, &wg) }()
 	wg.Add(1)
-	go func() { ProcessCrossBlockSandwich(blocks, &wg) }()
+	go func() { crCh <- ProcessCrossBlockSandwich(blocks, &wg) }()
 	wg.Wait()
+
+	close(inCh)
+	close(crCh)
+
+	if v, ok := <-inCh; ok {
+		inBlock = v
+	}
+	if v, ok := <-crCh; ok {
+		crossBlock = v
+	}
+
+	return
 }
 
-func ProcessInBlockSandwich(blocks types.Blocks, wg *sync.WaitGroup) {
+func ProcessInBlockSandwich(blocks types.Blocks, wg *sync.WaitGroup) []*types.InBlockSandwich {
 	defer wg.Done()
 
 	// Process in-block sandwiches in parallel
@@ -123,21 +139,19 @@ func ProcessInBlockSandwich(blocks types.Blocks, wg *sync.WaitGroup) {
 	}()
 
 	// Collect sandwiches from channel
-	sandwiches := make([]any, 0)
+	sandwiches := make([]*types.InBlockSandwich, 0)
 	for sandwich := range sandwichesCh {
-		sandwiches = append(sandwiches, sandwich)
+		sandwiches = append(sandwiches, sandwich...)
 	}
-	// Sort queued sandwiches by position
 
-	// Insert in-block sandwiches into DB
-	timeDB := time.Now()
-	// err := ch.InsertSandwiches(sandwiches)
-	// if err != nil {
-	// 	logger.SolLogger.Error("Failed to insert in-block sandwiches into DB", "err", err)
-	// } else {
-	// 	logger.SolLogger.Info("Inserted in-block sandwiches into DB", "num_sandwiches", len(sandwiches), "time_cost", time.Since(timeDB).String())
-	// }
-	logger.SolLogger.Info("Insert sandwiches", "num_sandwiches", len(sandwiches), "time_cost", time.Since(timeDB).String())
+	sort.Slice(sandwiches, func(i, j int) bool {
+		if sandwiches[i].Slot != sandwiches[j].Slot {
+			return sandwiches[i].Slot < sandwiches[j].Slot
+		}
+		return sandwiches[i].Timestamp.Before(sandwiches[j].Timestamp)
+	})
+
+	return sandwiches
 }
 
 func FindInBlockSandwiches(b *types.Block) []*types.InBlockSandwich {
@@ -146,10 +160,13 @@ func FindInBlockSandwiches(b *types.Block) []*types.InBlockSandwich {
 		AmountThreshold: config.SANDWICH_AMOUNT_THRESHOLD,
 	}
 
+	timeFind := time.Now()
 	finder.Find()
+	logger.SolLogger.Info("Find in-block sandwiches", "slot", b.Slot, "num_txs", len(b.Txs), "num_sandwiches", len(finder.Sandwiches), "time_cost", time.Since(timeFind).String())
 	return finder.Sandwiches
 }
 
-func ProcessCrossBlockSandwich(blocks types.Blocks, waitGroup *sync.WaitGroup) {
-	// panic("unimplemented")
+func ProcessCrossBlockSandwich(blocks types.Blocks, waitGroup *sync.WaitGroup) []*types.CrossBlockSandwich {
+	defer waitGroup.Done()
+	return nil
 }
