@@ -174,7 +174,7 @@ func GetBlocks(startSlot, count uint64) types.Blocks {
 					}
 
 					// Exhausted retries
-					logger.SolLogger.Error("getBlock failed after max retry", "slot", slotId, "retries", tries, "err", err)
+					logger.SolLogger.Warn("getBlock failed after retries, skip", "slot", slotId, "err", err)
 					if fetchedCount.Add(1) >= int32(count) {
 						closeQueue()
 					}

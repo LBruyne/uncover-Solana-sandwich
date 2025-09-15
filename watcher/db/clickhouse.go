@@ -60,6 +60,7 @@ func (d *ClickhouseDB) CreateTables() error {
 		ENGINE = MergeTree
 		ORDER BY timestamp
 		SETTINGS index_granularity = 8192`,
+
 		`CREATE TABLE IF NOT EXISTS solwich.slot_leaders
 		(
 			slot UInt64,
@@ -69,48 +70,67 @@ func (d *ClickhouseDB) CreateTables() error {
 		PRIMARY KEY slot
 		ORDER BY slot
 		SETTINGS index_granularity = 8192`,
+
 		`CREATE TABLE IF NOT EXISTS solwich.sandwiches
 		(
+			sandwichId String,
+			crossBlock Bool,
 			slot UInt64,
-			inBundle Bool,
 			timestamp DateTime,
-			signature String,
-			position Int32,
-			type String,
-			signer String,
+
+			tokenA String,
+			tokenB String,
 			consecutive Bool,
-			programs Array(String),
-			accountKeys Array(String),
-			fromToken String,
-			toToken String,
-			fromAmount Float64,
-			toAmount Float64,
-			fromDiff Float64,
-			toDiff Float64
+			frontConsecutive Bool,
+			backConsecutive Bool,
+			victimConsecutive Bool,
+
+			signerSame Bool,
+			ownerSame Bool,
+			ataSame Bool,
+
+			perfect Bool,
+			relativeDiffB Float64,
+			profitA Float64,
+
+			multiFrontRun Bool,
+			multiBackRun Bool,
+			multiVictim Bool,
+			frontCount UInt16,
+			backCount UInt16,
+			victimCount UInt16
 		)
 		ENGINE = MergeTree
-		ORDER BY timestamp
+		ORDER BY (slot, timestamp, sandwichId)
 		SETTINGS index_granularity = 8192`,
-		`CREATE TABLE IF NOT EXISTS solwich.sandwiches_jito
+
+		`CREATE TABLE IF NOT EXISTS solwich.sandwich_txs
 		(
+			sandwichId String,
+			type String,
+
 			slot UInt64,
+			position Int32,
 			timestamp DateTime,
 			signature String,
-			bundleId String,
-			type String,
 			signer String,
-			signerSame Bool,
-			programs Array(String),
+			inBundle Bool,
 			accountKeys Array(String),
+			programs Array(String),
+
 			fromToken String,
 			toToken String,
 			fromAmount Float64,
 			toAmount Float64,
-			fromDiff Float64,
-			toDiff Float64
+
+			fromTotalAmount Float64,
+			toTotalAmount Float64,
+
+			diffA Float64,
+			diffB Float64
 		)
 		ENGINE = MergeTree
-		ORDER BY timestamp
+		ORDER BY (slot, timestamp)
 		SETTINGS index_granularity = 8192`,
 	}
 
@@ -136,8 +156,7 @@ func (d *ClickhouseDB) InsertJitoBundles(bundles types.JitoBundles) error {
 		return err
 	}
 	for _, bundle := range bundles {
-		err := batch.AppendStruct(bundle)
-		if err != nil {
+		if err := batch.AppendStruct(bundle); err != nil {
 			return err
 		}
 	}
@@ -150,55 +169,45 @@ func (d *ClickhouseDB) InsertSlotLeaders(leaders types.SlotLeaders) error {
 		return err
 	}
 	for _, leader := range leaders {
-		err := batch.AppendStruct(leader)
-		if err != nil {
+		if err := batch.AppendStruct(leader); err != nil {
 			return err
 		}
 	}
 	return batch.Send()
 }
 
-// func (d *ClickhouseDB) InsertJitoSandwiches(sandwiches []*JitoSandwich) error {
-// 	batch, err := d.conn.PrepareBatch(context.Background(), "INSERT INTO jito_sandwiches")
-// 	if err != nil {
-// 		return err
-// 	}
-// 	for _, sandwich := range sandwiches {
-// 		err := batch.AppendStruct(sandwich)
-// 		if err != nil {
-// 			return err
-// 		}
-// 	}
-// 	return batch.Send()
-// }
+func (d *ClickhouseDB) InsertInBlockSandwiches(rows []*types.InBlockSandwich) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := d.conn.PrepareBatch(context.Background(), "INSERT INTO solwich.sandwiches")
+	if err != nil {
+		return err
+	}
+	for _, s := range rows {
+		if err := batch.AppendStruct(&s); err != nil {
+			return err
+		}
+	}
+	return batch.Send()
+}
 
-// func (d *ClickhouseDB) InsertSandwiches(sandwiches []*Sandwich) error {
-// 	batch, err := d.conn.PrepareBatch(context.Background(), "INSERT INTO sol_sandwiches")
-// 	if err != nil {
-// 		return err
-// 	}
-// 	for _, sandwich := range sandwiches {
-// 		err := batch.AppendStruct(sandwich)
-// 		if err != nil {
-// 			return err
-// 		}
-// 	}
-// 	return batch.Send()
-// }
+func (d *ClickhouseDB) InsertSandwichTxs(sandwichTxs []*types.SandwichTx) error {
+	if len(sandwichTxs) == 0 {
+		return nil
+	}
+	batch, err := d.conn.PrepareBatch(context.Background(), "INSERT INTO solwich.sandwich_txs")
+	if err != nil {
+		return err
+	}
 
-// func (d *ClickhouseDB) InsertTxs(txs []*Transaction) error {
-// 	batch, err := d.conn.PrepareBatch(context.Background(), "INSERT INTO txs")
-// 	if err != nil {
-// 		return err
-// 	}
-// 	for _, tx := range txs {
-// 		err := batch.AppendStruct(tx)
-// 		if err != nil {
-// 			return err
-// 		}
-// 	}
-// 	return batch.Send()
-// }
+	for _, tx := range sandwichTxs {
+		if err := batch.AppendStruct(&tx); err != nil {
+			return err
+		}
+	}
+	return batch.Send()
+}
 
 func (d *ClickhouseDB) QueryLatestBundleIds(limit uint) ([]string, error) {
 	rows, err := d.conn.Query(context.Background(),

@@ -67,11 +67,20 @@ func RunSandwichCmd(startSlot uint64) error {
 			types.PPCrossBlockSandwich(i+1, s)
 		}
 
+		// Save to DB
+		logger.SolLogger.Info("Store sandwiches to DB (start)")
+		timeStore := time.Now()
+		if err := StoreSandwichesToDB(ch, inBlockSandwiches, crossBlockSandwiches); err != nil {
+			logger.SolLogger.Error("Failed to store sandwiches to DB", "err", err)
+		}
+		logger.SolLogger.Info("Store sandwiches to DB (done)", "store_time", time.Since(timeStore).String())
+
 		// Update next start slot
 		startSlot += uint64(len(blocks))
 		// Sleep a while
 		logger.SolLogger.Info("Sleeping for "+config.SOL_FETCH_SLOT_LEADER_LONG_INTERVAL.String(), "next_start", startSlot)
 		time.Sleep(config.SOL_FETCH_SLOT_DATA_INTERVAL)
+
 		return nil // For testing, only fetch once
 	}
 }
@@ -168,5 +177,32 @@ func FindInBlockSandwiches(b *types.Block) []*types.InBlockSandwich {
 
 func ProcessCrossBlockSandwich(blocks types.Blocks, waitGroup *sync.WaitGroup) []*types.CrossBlockSandwich {
 	defer waitGroup.Done()
+	return nil
+}
+
+func StoreSandwichesToDB(ch db.Database, inBlockSandwiches []*types.InBlockSandwich, crossBlockSandwiches []*types.CrossBlockSandwich) error {
+	if len(inBlockSandwiches) > 0 {
+		if err := ch.InsertInBlockSandwiches(inBlockSandwiches); err != nil {
+			return fmt.Errorf("failed to insert in-block sandwiches to DB: %w", err)
+		}
+		logger.SolLogger.Info("Inserted in-block sandwiches to DB", "num", len(inBlockSandwiches))
+
+		sandwichTxToInsert := make([]*types.SandwichTx, 0)
+		for _, s := range inBlockSandwiches {
+			sandwichTxToInsert = append(sandwichTxToInsert, s.FrontRun...)
+			sandwichTxToInsert = append(sandwichTxToInsert, s.BackRun...)
+			sandwichTxToInsert = append(sandwichTxToInsert, s.Victims...)
+		}
+		if err := ch.InsertSandwichTxs(sandwichTxToInsert); err != nil {
+			return fmt.Errorf("failed to insert in-block sandwich txs to DB: %w", err)
+		}
+		logger.SolLogger.Info("Inserted in-block sandwich txs to DB", "num", len(sandwichTxToInsert))
+	}
+
+	if len(crossBlockSandwiches) > 0 {
+		// TODO: implement cross-block sandwich storage
+		logger.SolLogger.Info("Cross-block sandwich storage not implemented yet", "num", len(crossBlockSandwiches))
+	}
+
 	return nil
 }

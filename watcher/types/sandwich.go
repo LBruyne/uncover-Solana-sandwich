@@ -6,27 +6,29 @@ import (
 )
 
 type SandwichTxTokenInfo struct {
-	FromToken  string  `gorm:"column:fromToken; type:varchar(255)" ch:"fromToken"`
-	ToToken    string  `gorm:"column:toToken; type:varchar(255)" ch:"toToken"`
-	FromAmount float64 `gorm:"column:fromAmount" ch:"fromAmount"`
-	ToAmount   float64 `gorm:"column:toAmount" ch:"toAmount"`
+	FromToken  string  `ch:"fromToken"`
+	ToToken    string  `ch:"toToken"`
+	FromAmount float64 `ch:"fromAmount"`
+	ToAmount   float64 `ch:"toAmount"`
 
-	FromTotalAmount float64 `gorm:"column:fromTotalAmount" ch:"fromTotalAmount"` // Only last front-run or back-run tx in a multi-front or multi-back sandwich has the total amount
-	ToTotalAmount   float64 `gorm:"column:toTotalAmount" ch:"toTotalAmount"`     // Only last front-run or back-run tx in a multi-front or multi-back sandwich has the total amount
+	FromTotalAmount float64 `ch:"fromTotalAmount"` // Only last front-run or back-run tx in a multi-front or multi-back sandwich has the total amount
+	ToTotalAmount   float64 `ch:"toTotalAmount"`   // Only last front-run or back-run tx in a multi-front or multi-back sandwich has the total amount
 
-	DiffA float64 `gorm:"column:diffA" ch:"diffA"` // backTx.ToTotal - frontTx.FromTotal
-	DiffB float64 `gorm:"column:diffB" ch:"diffB"` // frontTx.ToTotal - backTx.FromTotal
+	DiffA float64 `ch:"diffA"` // backTx.ToTotal - frontTx.FromTotal
+	DiffB float64 `ch:"diffB"` // frontTx.ToTotal - backTx.FromTotal
 }
 
 type SandwichTx struct {
+	SandwichID string `ch:"sandwichId"`
+	InBundle   bool   `ch:"inBundle"`
+	Type       string `ch:"type"` // frontRun, backRun, or victim
 	Transaction
 	SandwichTxTokenInfo
-	InBundle bool   `ch:"inbundle"`
-	Type     string `ch:"type"` // frontRun, backRun, or victim
 }
 
 // Sandwich represents a detected sandwich transaction, including front-run, victim(s) and back-run like A->B, A->B, B->A
 type Sandwich struct {
+	SandwichID        string `ch:"sandwichId"`
 	TokenA            string `ch:"tokenA"`
 	TokenB            string `ch:"tokenB"`
 	CrossBlock        bool   `ch:"crossBlock"`        // whether the sandwich spans multiple blocks
@@ -47,16 +49,19 @@ type Sandwich struct {
 	RelativeDiffB float64 `ch:"relativeDiffB"` // The relative amount diff = |backTxs.fromTotalAmount - frontTxs.toTotalAmount| / max(frontTxs.toTotalAmount, backTxs.fromTotalAmount).
 	ProfitA       float64 `ch:"profitA"`       // The profit of the sandwich = backTx.toToTalAmount - frontTx.fromTotalAmount
 
-	FrontRun []*SandwichTx `ch:"frontRunTx" json:"frontRunTx"`
-	BackRun  []*SandwichTx `ch:"backRunTx" json:"backRunTx"`
-	Victims  []*SandwichTx `ch:"victims" json:"victims"`
+	FrontCount  uint16        `ch:"frontCount"`
+	BackCount   uint16        `ch:"backCount"`
+	VictimCount uint16        `ch:"victimCount"`
+	FrontRun    []*SandwichTx `ch:"frontRunTx" json:"frontRunTx"`
+	BackRun     []*SandwichTx `ch:"backRunTx" json:"backRunTx"`
+	Victims     []*SandwichTx `ch:"victims" json:"victims"`
 }
 
 // InBlockSandwich is a detected sandwich transaction, that front-run, victim(s) and back-run are all in the same block
 type InBlockSandwich struct {
 	Sandwich
-	Slot      uint64    `gorm:"column:slot" ch:"slot" json:"slot"`
-	Timestamp time.Time `gorm:"column:timestamp" ch:"timestamp" json:"timestamp"`
+	Slot      uint64    `ch:"slot" json:"slot"`
+	Timestamp time.Time `ch:"timestamp" json:"timestamp"`
 }
 
 type CrossBlockSandwich struct {
@@ -74,9 +79,18 @@ func ppSandwichTxs(kind string, txs []*SandwichTx) {
 		fmt.Printf("    [%d] pos=%d signer=%s sig=%s\n", i, pos, signer, sig)
 		fmt.Printf("         from=%s amt=%.9f  to=%s amt=%.9f\n",
 			ti.FromToken, ti.FromAmount, ti.ToToken, ti.ToAmount)
-		if ti.FromTotalAmount != 0 || ti.ToTotalAmount != 0 || ti.DiffA != 0 || ti.DiffB != 0 {
-			fmt.Printf("         totals: fromTotal=%.9f  toTotal=%.9f  diffA=%.9f  diffB=%.9f\n",
-				ti.FromTotalAmount, ti.ToTotalAmount, ti.DiffA, ti.DiffB)
+
+		// Statistics
+		switch kind {
+		case "FrontRun":
+			if i == len(txs)-1 { // only last front-run tx has total amount
+				fmt.Printf("         totals: fromTotal=%.9f  toTotal=%.9f\n",
+					ti.FromTotalAmount, ti.ToTotalAmount)
+			}
+		case "BackRun":
+			if i == len(txs)-1 { // only last back-run tx has total amount
+				fmt.Printf("         totals: fromTotal=%.9f  toTotal=%.9f  diffA=%.9f  diffB=%.9f\n", ti.FromTotalAmount, ti.ToTotalAmount, ti.DiffA, ti.DiffB)
+			}
 		}
 	}
 }
@@ -102,7 +116,7 @@ func PPInBlockSandwich(i int, s *InBlockSandwich) {
 func summarizeCrossBlockSpan(s *CrossBlockSandwich) (minSlot, maxSlot uint64, minTime, maxTime time.Time) {
 	minSlot = ^uint64(0) // max uint64
 	maxSlot = 0
-	minTime = time.Unix(1<<62, 0) // 很大的过去时间
+	minTime = time.Unix(1<<62, 0)
 	maxTime = time.Unix(0, 0)
 
 	collect := func(txs []*SandwichTx) {

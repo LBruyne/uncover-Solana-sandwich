@@ -14,50 +14,37 @@ type Block struct {
 	BlockHeight uint64
 	Timestamp   time.Time
 	Txs         []*Transaction
-	// RelatedAddrs *utils.UnionFind[string]
 }
 
 type Blocks []*Block
 
 type Transaction struct {
-	Slot      uint64 `json:"slot"`
-	Position  int
-	Timestamp time.Time `json:"timestamp"`
+	Slot      uint64    `json:"slot" ch:"slot"`
+	Position  int       `json:"position" ch:"position"` // The position of this transaction in the block
+	Timestamp time.Time `json:"timestamp" ch:"timestamp"`
 	IsFailed  bool
 	IsVote    bool
 
-	// The identifier of this transaction, which is the first signature in Signatures field.
-	// A 64 bytes Ed25519 signature, encoded as a base-58 string.
-	Signature string
-	// The account address that signed the transaction and paid the fee, which is thte first account in the AccountKeys array.
-	Signer string
-	// All accounts that signed the transaction and paid the fee
-	AccountKeys []string `json:"accountKeys"`
-	Programs    []string
+	Signature   string   `json:"signature" ch:"signature"`     // The identifier of this transaction, which is the first signature in Signatures field. A 64 bytes Ed25519 signature, encoded as a base-58 string.
+	Signer      string   `json:"signer" ch:"signer"`           // The account address that signed the transaction and paid the fee, which is thte first account in the AccountKeys array.
+	AccountKeys []string `json:"accountKeys" ch:"accountKeys"` // All accounts that signed the transaction and paid the fee
+	Programs    []string `json:"programs" ch:"programs"`       // All programs invoked in this transaction
 
-	// In Solana, for each token/WSOL, each user has an Associated Token Account, ATA, which is controlled by the address of the hold (owner). An ATA is derived from the owner's address and the token mint address.
-	//
-	// owner -> token/SOL -> []{ata, delta}
-	// Record the balance changes of each owner for each token/SOL in this transaction.
+	// Account-balance related information
+	// In Solana, for each token/WSOL, each user has an Associated Token Account, ATA, which is controlled by the address of the holder (owner).
+	// An ATA is derived from the owner's address and the token mint address.
 	// A token is labeled by its mint address, e.g.
 	// USDC: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1vl,
 	// WSOL: So11111111111111111111111111111111111111112,
 	// SOL is labeled by "SOL"
 	// A owner may have multiple ATAs for the same token
-	OwnerBalanceChanges map[string]map[string]AtaAmounts `ch:"ownerBalanceChanges" json:"ownerBalanceChanges"`
-	// owner -> token/SOL -> pre balance
-	// Record the pre-transaction balance of each owner for each token/SOL in this transaction.
-	OwnerPreBalances map[string]map[string]float64 `ch:"ownerPreBalances" json:"ownerPreBalances"`
-	// ata -> owner address
-	// Record the owner address of each ATA involved in this transaction.
-	AtaOwner map[string]string `ch:"ataOwner" json:"ataOwner"`
-	// RelatedTokens records all tokens involved in this transaction
-	RelatedTokens MapSet.Set[string] `ch:"relatedTokens" json:"relatedTokens"`
-	// RelatedPools records all pools involved in this transaction
-	// A pool is a Solana address in frontTx that has at least 1 income token and 1 expense token throughout this tx, excluding the signer itself, e.g., WSOL/USDC pool
-	// RecordPoolsInfo records the detailed token changes of each related pool
-	RelatedPools     MapSet.Set[string]    `ch:"relatedPools" json:"relatedPools"`
-	RelatedPoolsInfo map[string]PoolAmount // pool address -> {fromToken, fromAmt, toToken, toAmt}
+	// A pool is a Solana address that has exact 1 income token and 1 expense token throughout a tx, excluding the signer itself, e.g., WSOL/TESLA pool
+	OwnerBalanceChanges map[string]map[string]AtaAmounts `ch:"ownerBalanceChanges" json:"ownerBalanceChanges"` // owner -> token/SOL -> []{ata, delta}, record the balance changes of each owner for each token/SOL in this transaction.
+	OwnerPreBalances    map[string]map[string]float64    `ch:"ownerPreBalances" json:"ownerPreBalances"`       // owner -> token/SOL -> pre balance, record the pre-transaction balance of each owner for each token/SOL in this transaction.
+	AtaOwner            map[string]string                `ch:"ataOwner" json:"ataOwner"`                       // ata -> owner address, record the owner of each ATA involved in this transaction
+	RelatedTokens       MapSet.Set[string]               `ch:"relatedTokens" json:"relatedTokens"`             // records all tokens involved in this transaction
+	RelatedPools        MapSet.Set[string]               `ch:"relatedPools" json:"relatedPools"`               // records all pools involved in this transaction
+	RelatedPoolsInfo    map[string]PoolAmount            // pool address -> {fromToken, fromAmt, toToken, toAmt}, record the token changes of each related pool
 }
 
 type Transactions []*Transaction

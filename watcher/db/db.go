@@ -13,9 +13,9 @@ type Database interface {
 	Exec(query string, args ...any) error
 	InsertJitoBundles(bundles types.JitoBundles) error
 	InsertSlotLeaders(leaders types.SlotLeaders) error
-	// InsertJitoSandwiches(sandwiches []*JitoSandwich) error
-	// InsertSandwiches(sandwiches []*Sandwich) error
-	// InsertTxs(txs []*Transaction) error
+	InsertInBlockSandwiches(rows []*types.InBlockSandwich) error
+	InsertSandwichTxs(sandwichTxs []*types.SandwichTx) error
+
 	// QueryJitoBundles(query string, args ...any) ([]*JitoBundle, error)
 	// QueryLastSandwich() (uint64, time.Time, error)
 

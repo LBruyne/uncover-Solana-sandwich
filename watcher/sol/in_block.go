@@ -1,6 +1,8 @@
 package sol
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"math"
 	"watcher/config"
 	"watcher/types"
@@ -335,18 +337,20 @@ func (f *InBlockSandwichFinder) RecordSandwich() {
 		return
 	}
 
+	sandwichId := makeSandwichID(f.Txs[f.lastFrontTxEntries[0].TxIdx].Signature, f.Txs[f.lastBackTxEntries[0].TxIdx].Signature)
+
 	// Make SandwichTxs
 	frontTxs := make([]*types.SandwichTx, 0, len(f.lastFrontTxEntries))
 	for _, fe := range f.lastFrontTxEntries {
-		frontTxs = append(frontTxs, f.makeSandwichTx(fe, "frontRun"))
+		frontTxs = append(frontTxs, f.makeSandwichTx(sandwichId, fe, "frontRun"))
 	}
 	backTxs := make([]*types.SandwichTx, 0, len(f.lastBackTxEntries))
 	for _, be := range f.lastBackTxEntries {
-		backTxs = append(backTxs, f.makeSandwichTx(be, "backRun"))
+		backTxs = append(backTxs, f.makeSandwichTx(sandwichId, be, "backRun"))
 	}
 	victimTxs := make([]*types.SandwichTx, 0, len(f.lastVictimEntries))
 	for _, ve := range f.lastVictimEntries {
-		victimTxs = append(victimTxs, f.makeSandwichTx(ve, "victim"))
+		victimTxs = append(victimTxs, f.makeSandwichTx(sandwichId, ve, "victim"))
 	}
 	// Append total and diff amount for last tx in frontTxs and backTxs
 	if len(frontTxs) > 0 {
@@ -375,25 +379,36 @@ func (f *InBlockSandwichFinder) RecordSandwich() {
 	// Make InBlockSandwich
 	s := &types.InBlockSandwich{
 		Sandwich: types.Sandwich{
-			TokenA:            f.lastTokenA,
-			TokenB:            f.lastTokenB,
-			CrossBlock:        false,
+			SandwichID: sandwichId,
+			TokenA:     f.lastTokenA,
+			TokenB:     f.lastTokenB,
+			// Block info
+			CrossBlock: false,
+			// Consecutiveness
 			Consecutive:       isSandwichConsecutive(f.lastFrontTxEntries, f.lastVictimEntries, f.lastBackTxEntries),
 			FrontConsecutive:  isEntriesConsecutive(f.lastFrontTxEntries, false),
 			BackConsecutive:   isEntriesConsecutive(f.lastBackTxEntries, false),
 			VictimConsecutive: isEntriesConsecutive(f.lastVictimEntries, false),
-			MultiFrontRun:     len(f.lastFrontTxEntries) > 1,
-			MultiBackRun:      len(f.lastBackTxEntries) > 1,
-			MultiVictim:       len(f.lastVictimEntries) > 1,
-			SignerSame:        signerSame,
-			OwnerSame:         false, // TODO:
-			ATASame:           false, // TODO:
-			Perfect:           f.perfect,
-			RelativeDiffB:     f.relativeAmtDiffB,
-			ProfitA:           f.profitA,
-			FrontRun:          frontTxs,
-			BackRun:           backTxs,
-			Victims:           victimTxs,
+			// Signer/owner/ata info
+			SignerSame: signerSame,
+			OwnerSame:  false, // TODO:
+			ATASame:    false, // TODO:
+			// Amount info
+			Perfect:       f.perfect,
+			RelativeDiffB: f.relativeAmtDiffB,
+			ProfitA:       f.profitA,
+
+			// Counts
+			MultiFrontRun: len(f.lastFrontTxEntries) > 1,
+			MultiBackRun:  len(f.lastBackTxEntries) > 1,
+			MultiVictim:   len(f.lastVictimEntries) > 1,
+			FrontCount:    uint16(len(frontTxs)),
+			BackCount:     uint16(len(backTxs)),
+			VictimCount:   uint16(len(victimTxs)),
+			// SandwichTxs
+			FrontRun: frontTxs,
+			BackRun:  backTxs,
+			Victims:  victimTxs,
 		},
 		Slot:      slot,
 		Timestamp: timestamp,
@@ -412,12 +427,14 @@ func (f *InBlockSandwichFinder) RecordSandwich() {
 	}
 }
 
-func (f *InBlockSandwichFinder) makeSandwichTx(entry PoolEntry, kind string) *types.SandwichTx {
+// makeSandwichTx makes a SandwichTx from a PoolEntry and kind ("frontRun", "victim", "backRun")
+func (f *InBlockSandwichFinder) makeSandwichTx(sandwichId string, entry PoolEntry, kind string) *types.SandwichTx {
 	orig := f.Txs[entry.TxIdx]
 	var stx *types.SandwichTx
 	switch kind {
 	case "frontRun", "victim", "backRun":
 		stx = &types.SandwichTx{
+			SandwichID:  sandwichId,
 			Transaction: *orig,
 			SandwichTxTokenInfo: types.SandwichTxTokenInfo{
 				FromToken:  entry.IncomeToken,
@@ -433,6 +450,12 @@ func (f *InBlockSandwichFinder) makeSandwichTx(entry PoolEntry, kind string) *ty
 	}
 
 	return stx
+}
+
+// makeSandwichID makes a unique ID for a sandwich based on the front and back transaction signatures
+func makeSandwichID(frontSig, backSig string) string {
+	h := sha256.Sum256([]byte(frontSig + ":" + backSig))
+	return hex.EncodeToString(h[:])
 }
 
 // isSandwichConsecutive checks if the given front, victim, and back entries are consecutive in terms of position
