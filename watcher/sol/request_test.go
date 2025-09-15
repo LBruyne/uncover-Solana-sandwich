@@ -7,8 +7,8 @@ import (
 )
 
 func init() {
+	logger.InitLogs("sol-test")
 	SolonaRpcURL = "http://185.209.179.15:8899"
-	logger.InitLogs("test")
 }
 
 func TestGetSlotLeadersRealAPI(t *testing.T) {

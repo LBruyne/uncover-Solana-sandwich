@@ -52,6 +52,9 @@ type Transactions []*Transaction
 // PostprocessForFindSandwich performs post-processing on the transaction data to prepare it for sandwich detection.
 // It extracts and organizes relevant information such as RelatedTokens and RelatedPools.
 func (tx *Transaction) PostprocessForFindSandwich() {
+	relatedTokens := MapSet.NewSet[string]()
+	relatedPools := MapSet.NewSet[string]()
+	relatedPoolsInfo := make(map[string]PoolAmount)
 	if tx.IsFailed || tx.IsVote {
 		return // Skip failed or vote transactions
 	}
@@ -98,7 +101,6 @@ func (tx *Transaction) PostprocessForFindSandwich() {
 
 	// Useful things for sandwich detection
 	// Collect potentially related tokens
-	relatedTokens := MapSet.NewSet[string]()
 	for _, tokenChanges := range tx.OwnerBalanceChanges {
 		for token := range tokenChanges {
 			relatedTokens.Add(token)
@@ -106,8 +108,6 @@ func (tx *Transaction) PostprocessForFindSandwich() {
 	}
 	tx.RelatedTokens = relatedTokens
 	// Collect potentially related pools (heuristic: any owner with only 1 income token and 1 expense token throughout this tx)
-	relatedPools := MapSet.NewSet[string]()
-	relatedPoolsInfo := make(map[string]PoolAmount)
 	for owner, tokenChanges := range tx.OwnerBalanceChanges {
 		if owner == tx.Signer {
 			continue // skip signer

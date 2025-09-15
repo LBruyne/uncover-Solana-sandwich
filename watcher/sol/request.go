@@ -319,7 +319,6 @@ func GetBlock(slot uint64) (*types.Block, error) {
 		tx.Timestamp = b.Timestamp
 		tx.PostprocessForFindSandwich()
 		b.Txs = append(b.Txs, tx)
-		// b.RelatedAddrs.Merge(tx.RelatedAddrs) // union addresses across txs
 	}
 	logger.SolLogger.Info("Parsed block cost", "slot", slot, "num_txs", len(b.Txs), "block_time", time.Since(parseBlkTime).String())
 	return b, nil

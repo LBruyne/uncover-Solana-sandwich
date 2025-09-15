@@ -12,9 +12,9 @@ import (
 var slot uint64
 
 func init() {
+	logger.InitLogs("sol-test")
 	SolonaRpcURL = "http://185.209.179.15:8899"
 	slot = 366883341 // Replace a fresh slot id
-	logger.InitLogs("test")
 }
 
 func TestFindInBlockSandwiches_Slot(t *testing.T) {

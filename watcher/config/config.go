@@ -32,7 +32,6 @@ const (
 	SOL_FETCH_SLOT_DATA_SLOT_NUM     = 1 // number of slots to fetch each time
 	SOL_FETCH_SLOT_DATA_PARALLEL_NUM = 8 // number of parallel requests
 	SOL_FETCH_SLOT_DATA_RETRYS       = 3 // number of retries on failure
-
 )
 
 // Detection config

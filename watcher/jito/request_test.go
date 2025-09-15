@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"watcher/logger"
 )
 
 func init() {
+	logger.InitLogs("jito_test")
 	JitoBundleURL = "https://bundles.jito.wtf/api/v1/bundles"
 }
 
