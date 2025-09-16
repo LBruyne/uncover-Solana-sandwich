@@ -29,7 +29,7 @@ sudo apt-get install -y clickhouse-server clickhouse-client
 sudo service clickhouse-server start
 
 clickhouse-client
-``` 
+```
 
 You will have a default user `default` with no password (in some cases you need to reset the password if you cannot login to Clickhouse). You can create a new user (with password) and database for the Watcher.
 
@@ -40,6 +40,7 @@ CREATE DATABASE solwich;
 ```
 
 ## Setup environment and configs
+
 Now, create your own configuration files and environment variables about database and RPCs in `.env` and `config.yaml` under the `watcher` folder.
 
 - Refer to [.env.example](./.env.example) and create your own `.env` file. You need to set the database connection parameters.
