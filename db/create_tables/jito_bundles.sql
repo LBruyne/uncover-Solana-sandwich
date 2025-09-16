@@ -1,6 +1,7 @@
 CREATE TABLE solwich.jito_bundles
 (
     `bundleId` String,
+    `slot` UInt64,
     `timestamp` DateTime,
     `tippers` Array(String),
     `transactions` Array(String),

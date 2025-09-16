@@ -13,10 +13,20 @@ var RootCmd = &cobra.Command{
 }
 
 // Flags
+var jitoStart uint64
 var slotStart uint64
 var sandwichStart uint64
 
 func init() {
+
+	jitoCmd.Flags().Uint64VarP(
+		&jitoStart,
+		"slot",
+		"s",
+		0,
+		fmt.Sprintf("(Optional) starting slot number (>=%d)", config.MIN_START_SLOT),
+	)
+
 	slotCmd.Flags().Uint64VarP(
 		&slotStart,
 		"slot",
@@ -24,7 +34,6 @@ func init() {
 		0,
 		fmt.Sprintf("(Optional) starting slot number (>=%d)", config.MIN_START_SLOT),
 	)
-	// slotCmd.Flags().Uint64P("end", "e", 0, "end slot")
 
 	sandwichCmd.Flags().Uint64VarP(
 		&sandwichStart,
@@ -34,5 +43,5 @@ func init() {
 		fmt.Sprintf("(Optional) starting slot number (>=%d)", config.MIN_START_SLOT),
 	)
 
-	RootCmd.AddCommand(&jitoCmd, &slotCmd, &sandwichCmd)
+	RootCmd.AddCommand(&resetCmd, &jitoCmd, &slotCmd, &sandwichCmd)
 }

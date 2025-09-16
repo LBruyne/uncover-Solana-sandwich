@@ -120,7 +120,7 @@ func TestGetBundlesBySlotRealAPI(t *testing.T) {
 		t.Skip("JitoBundleURL not configured, skipping real API test")
 	}
 
-	slot := uint64(360000000)
+	slot := uint64(366000000)
 	fmt.Println("Testing real /slot API for slot:", slot)
 
 	bundles, err := GetBundlesBySlot(slot)
@@ -128,6 +128,7 @@ func TestGetBundlesBySlotRealAPI(t *testing.T) {
 		t.Fatalf("GetBundlesBySlot failed: %v", err)
 	}
 
+	fmt.Printf("Total bundles for slot %d: %d\n", slot, len(bundles))
 	for i, b := range bundles {
 		fmt.Printf("[%d] BundleId: %s, Slot: %d, Validator: %s, #Tx: %d, LandedTipLamports: %d\n",
 			i, b.BundleId, b.Slot, b.Validator, len(b.TxSignatures), b.LandedTipLamports)

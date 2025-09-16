@@ -10,7 +10,7 @@ import (
 )
 
 var sandwichCmd = cobra.Command{
-	Use:   "sandwich-info",
+	Use:   "sandwich",
 	Short: "Start monitoring, syncing and storing Sandwich information",
 	Run: func(cmd *cobra.Command, args []string) {
 		logger.InitLogs("sandwich")
@@ -20,7 +20,7 @@ var sandwichCmd = cobra.Command{
 			return
 		}
 
-		logger.SolLogger.Info("Running cmd sandwich-info, starting sandwich monitoring...", "start", sandwichStart)
+		logger.SolLogger.Info("Running cmd sandwich, starting sandwich monitoring...", "start", sandwichStart)
 
 		if err := sol.RunSandwichCmd(sandwichStart); err != nil {
 			logger.SolLogger.Error("Error running Sandwich command", "error", err)

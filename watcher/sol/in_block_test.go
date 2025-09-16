@@ -2,33 +2,80 @@ package sol
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
-	"watcher/logger"
+	"watcher/config"
 	"watcher/types"
 )
 
 var slot uint64
 
 func init() {
-	logger.InitLogs("sol-test")
-	SolonaRpcURL = "http://185.209.179.15:8899"
-	slot = 366883341 // Replace a fresh slot id
+	slot = 367156040 // Replace a fresh slot id
 }
 
-func TestFindInBlockSandwiches_Slot(t *testing.T) {
+func TestFindInBlockSandwichesBySlot(t *testing.T) {
+	tt := time.Now()
 	blk, err := GetBlock(slot)
+	fmt.Printf("GetBlock time cost: %s\n", time.Since(tt).String())
 	if err != nil {
 		t.Fatalf("GetBlock(%d) error: %v", slot, err)
 	}
 	if blk == nil || len(blk.Txs) == 0 {
 		t.Fatalf("empty block or no txs at slot %d", slot)
 	}
-	fmt.Printf("Loaded block: slot=%d height=%d time=%s txs=%d\n\n",
-		blk.Slot, blk.BlockHeight, blk.Timestamp.Format(time.RFC3339), len(blk.Txs))
 
 	res := FindInBlockSandwiches(blk)
+
+	fmt.Printf("Detected %d in-block sandwiches in slot=%d\n\n", len(res), slot)
+	for i, s := range res {
+		types.PPInBlockSandwich(i+1, s)
+	}
+
+	for _, s := range res {
+		if s == nil {
+			t.Fatalf("nil sandwich encountered")
+		}
+		if len(s.FrontRun) == 0 || len(s.BackRun) == 0 || len(s.Victims) == 0 {
+			t.Fatalf("invalid sandwich parts: empty front/back/victim")
+		}
+		for _, f := range s.FrontRun {
+			if !(f.FromToken == s.TokenA && f.ToToken == s.TokenB) {
+				t.Fatalf("front direction mismatch: got %s->%s, expect %s->%s",
+					f.FromToken, f.ToToken, s.TokenA, s.TokenB)
+			}
+		}
+		for _, v := range s.Victims {
+			if !(v.FromToken == s.TokenA && v.ToToken == s.TokenB) {
+				t.Fatalf("victim direction mismatch: got %s->%s, expect %s->%s",
+					v.FromToken, v.ToToken, s.TokenA, s.TokenB)
+			}
+		}
+		for _, b := range s.BackRun {
+			if !(b.FromToken == s.TokenB && b.ToToken == s.TokenA) {
+				t.Fatalf("back direction mismatch: got %s->%s, expect %s->%s",
+					b.FromToken, b.ToToken, s.TokenB, s.TokenA)
+			}
+		}
+	}
+}
+
+func TestFindInBlockSandwichesBySlotParallel(t *testing.T) {
+	tt1 := time.Now()
+	blks := GetBlocks(slot, config.SOL_FETCH_SLOT_DATA_SLOT_NUM)
+	fmt.Printf("GetBlocks time cost: %s\n", time.Since(tt1).String())
+	if len(blks) == 0 {
+		t.Fatalf("GetBlocks returned no blocks")
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	tt2 := time.Now()
+	res := ProcessInBlockSandwich(blks, &wg)
+	fmt.Printf("ProcessInBlockSandwich time cost: %s\n", time.Since(tt2).String())
+	wg.Wait()
 
 	fmt.Printf("Detected %d in-block sandwiches in slot=%d\n\n", len(res), slot)
 	for i, s := range res {

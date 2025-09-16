@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+	"watcher/config"
 	"watcher/jito"
 	"watcher/logger"
 
@@ -9,13 +11,18 @@ import (
 
 var jitoCmd = cobra.Command{
 	Use:   "jito",
-	Short: "Start monitoring, sycning and storing Jito bundles",
+	Short: "Start monitoring, sycning and storing Jito bundles, including marking sandwiches in Jito bundles",
 	Run: func(cmd *cobra.Command, args []string) {
 		logger.InitLogs("jito")
 
-		logger.JitoLogger.Info("Running cmd jito, starting Jito bundle monitoring...")
+		if jitoStart < config.MIN_START_SLOT {
+			logger.JitoLogger.Error(fmt.Sprintf("start slot (%d) is below minimum allowed slot (%d)", jitoStart, config.MIN_START_SLOT))
+			return
+		}
 
-		if err := jito.RunJitoCmd(); err != nil {
+		logger.JitoLogger.Info("Running cmd jito, starting Jito bundle monitoring and marking...")
+
+		if err := jito.RunJitoCmd(jitoStart); err != nil {
 			logger.JitoLogger.Error("Error running Jito command", "error", err)
 		}
 	},

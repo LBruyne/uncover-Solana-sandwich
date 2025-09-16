@@ -24,9 +24,9 @@ func RunSandwichCmd(startSlot uint64) error {
 	}
 	logger.SolLogger.Info("Current slot from Solana RPC", "slot", currentSlotFromRpc)
 	startSlot = currentSlotFromRpc - config.SOL_FETCH_SLOT_DATA_MAX_GAP
-	logger.SolLogger.Info("Fetch slot data statistic", "start", startSlot, "current_from_rpc", currentSlotFromRpc)
+	logger.SolLogger.Info("Fetch slot setting adjusts", "start", startSlot, "current_from_rpc", currentSlotFromRpc)
 
-	logger.SolLogger.Info("Syncing slot data from current slot", "current", currentSlotFromRpc)
+	logger.SolLogger.Info("Syncing slot data start from", "start", startSlot)
 	for {
 		currentSlot, err := GetCurrentSlot()
 		if err != nil {
@@ -49,9 +49,9 @@ func RunSandwichCmd(startSlot uint64) error {
 		logger.SolLogger.Info("Fetched slot data (done)", "start", startSlot, "num_fetched", len(blocks), "fetch_time", fetchTime.String())
 
 		// Test print block
-		for _, b := range blocks {
-			types.PPBlock(b, 1)
-		}
+		// for _, b := range blocks {
+		// 	types.PPBlock(b, 1)
+		// }
 
 		// Process blocks to find sandwiches
 		logger.SolLogger.Info("Process slot data (start)", "start", startSlot, "num_fetched", len(blocks))

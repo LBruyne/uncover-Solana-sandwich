@@ -16,11 +16,11 @@ func initConfig() {
 	viper.AddConfigPath(config.ConfigPath)
 
 	if err := viper.MergeInConfig(); err != nil {
-		logger.GlobalLogger.Error("Error reading config.yaml file, if you don't have config.yaml file, please create one from config-example.yaml", "err", err)
+		logger.GlobalLogger.Error("Error reading config.yaml file, if you don't have config.yaml file, please create one from config.example.yaml", "err", err)
 	}
 
 	if err := godotenv.Load(config.ConfigPath + ".env"); err != nil {
-		logger.GlobalLogger.Error("Error reading .env file, if you don't have .env file, please create one from .env-example", "err", err)
+		logger.GlobalLogger.Error("Error reading .env file, if you don't have .env file, please create one from .env.example", "err", err)
 	}
 
 	viper.AutomaticEnv()

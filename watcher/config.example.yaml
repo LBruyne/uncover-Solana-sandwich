@@ -2,4 +2,4 @@ jito:
   bundles-url: https://bundles.jito.wtf/api/v1/bundles
 sol:
   rpc-helius: https://api.mainnet-beta.solana.com
-  rpc: # Replace with your own RPC endpoint, we use http://185.209.179.15:8899
+  rpc: # Replace with your own RPC endpoint, we use http://64.130.44.232:8899

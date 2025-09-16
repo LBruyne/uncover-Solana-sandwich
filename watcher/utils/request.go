@@ -9,12 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
-)
-
-const (
-	DefaultRetryTimes    = 5
-	DefaultRetryInterval = 100 * time.Millisecond
-	DefaultTimeout       = 5 * time.Second
+	"watcher/config"
 )
 
 func GetUrlResponse(url string, params map[string]string, result any, logger *slog.Logger) error {
@@ -38,7 +33,7 @@ func GetUrlResponseWithRetry(url string, params map[string]string, result any, r
 			return nil
 		}
 		logger.Warn("GET request failed, retrying...", "url", reqUrl, "attempt", i+1, "err", lastErr)
-		time.Sleep(DefaultRetryInterval)
+		time.Sleep(config.DefaultRetryInterval)
 	}
 	return fmt.Errorf("GET request failed after %d attempts: %w", retry, lastErr)
 }
@@ -55,13 +50,13 @@ func PostUrlResponseWithRetry(url string, body any, result any, retry int, logge
 			return nil
 		}
 		logger.Warn("POST request failed, retrying...", "url", url, "body", body, "attempt", i+1, "err", lastErr)
-		time.Sleep(DefaultRetryInterval)
+		time.Sleep(config.DefaultRetryInterval)
 	}
 	return fmt.Errorf("POST request failed after %d attempts: %w", retry, lastErr)
 }
 
 func doGet(url string, result any) error {
-	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), config.DefaultTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -89,7 +84,7 @@ func doGet(url string, result any) error {
 }
 
 func doPost(url string, body any, result any) error {
-	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), config.DefaultTimeout)
 	defer cancel()
 
 	bodyBytes, err := json.Marshal(body)

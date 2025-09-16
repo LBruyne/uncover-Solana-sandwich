@@ -62,7 +62,7 @@ func CallRpc(method string, params []interface{}) (interface{}, error) {
 	}
 
 	var resp SolanaRpcResponse
-	err := utils.PostUrlResponseWithRetry(url, req, &resp, utils.DefaultRetryTimes, logger.SolLogger)
+	err := utils.PostUrlResponseWithRetry(url, req, &resp, config.DefaultRetryTimes, logger.SolLogger)
 	if err != nil {
 		return nil, fmt.Errorf("RPC %s failed: %w", method, err)
 	}
@@ -291,11 +291,11 @@ func GetBlock(slot uint64) (*types.Block, error) {
 
 	// Init block model
 	b := &types.Block{
-		Slot:        slot,
-		Timestamp:   ts,
-		BlockHeight: height,
-		Txs:         make([]*types.Transaction, 0, len(txsData)),
-		// RelatedAddrs: utils.NewUnionFind[string](), // union-find for related addresses
+		Slot:         slot,
+		Timestamp:    ts,
+		BlockHeight:  height,
+		ValidTxCount: 0,
+		Txs:          make([]*types.Transaction, 0, len(txsData)),
 	}
 	// Parse transactions (each item has meta + transaction{ message{...}, signatures... }; message is base64 per our request)
 	for i, txData := range txsData {
@@ -319,8 +319,11 @@ func GetBlock(slot uint64) (*types.Block, error) {
 		tx.Timestamp = b.Timestamp
 		tx.PostprocessForFindSandwich()
 		b.Txs = append(b.Txs, tx)
+		if !tx.IsFailed && !tx.IsVote {
+			b.ValidTxCount++
+		}
 	}
-	logger.SolLogger.Info("Parsed block cost", "slot", slot, "num_txs", len(b.Txs), "block_time", time.Since(parseBlkTime).String())
+	logger.SolLogger.Info("Parsed block cost", "slot", slot, "num_txs", len(b.Txs), "num_valid_txs", b.ValidTxCount, "parse_time", time.Since(parseBlkTime).String())
 	return b, nil
 }
 

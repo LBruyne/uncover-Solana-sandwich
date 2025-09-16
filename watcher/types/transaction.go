@@ -10,10 +10,11 @@ import (
 )
 
 type Block struct {
-	Slot        uint64
-	BlockHeight uint64
-	Timestamp   time.Time
-	Txs         []*Transaction
+	Slot         uint64
+	BlockHeight  uint64
+	Timestamp    time.Time
+	Txs          []*Transaction
+	ValidTxCount uint64
 }
 
 type Blocks []*Block
@@ -52,9 +53,9 @@ type Transactions []*Transaction
 // PostprocessForFindSandwich performs post-processing on the transaction data to prepare it for sandwich detection.
 // It extracts and organizes relevant information such as RelatedTokens and RelatedPools.
 func (tx *Transaction) PostprocessForFindSandwich() {
-	relatedTokens := MapSet.NewSet[string]()
-	relatedPools := MapSet.NewSet[string]()
-	relatedPoolsInfo := make(map[string]PoolAmount)
+	tx.RelatedTokens = MapSet.NewSet[string]()
+	tx.RelatedPools = MapSet.NewSet[string]()
+	tx.RelatedPoolsInfo = make(map[string]PoolAmount)
 	if tx.IsFailed || tx.IsVote {
 		return // Skip failed or vote transactions
 	}
@@ -101,6 +102,7 @@ func (tx *Transaction) PostprocessForFindSandwich() {
 
 	// Useful things for sandwich detection
 	// Collect potentially related tokens
+	relatedTokens := MapSet.NewSet[string]()
 	for _, tokenChanges := range tx.OwnerBalanceChanges {
 		for token := range tokenChanges {
 			relatedTokens.Add(token)
@@ -108,6 +110,8 @@ func (tx *Transaction) PostprocessForFindSandwich() {
 	}
 	tx.RelatedTokens = relatedTokens
 	// Collect potentially related pools (heuristic: any owner with only 1 income token and 1 expense token throughout this tx)
+	relatedPools := MapSet.NewSet[string]()
+	relatedPoolsInfo := make(map[string]PoolAmount)
 	for owner, tokenChanges := range tx.OwnerBalanceChanges {
 		if owner == tx.Signer {
 			continue // skip signer
@@ -206,6 +210,7 @@ func PPTx(i int, tx *Transaction) {
 		tx.IsFailed, tx.IsVote, len(tx.Programs), len(tx.AccountKeys))
 
 	// Related tokens
+	// if !tx.RelatedTokens.IsEmpty()
 	tokens := tx.RelatedTokens.ToSlice()
 	if len(tokens) > 0 {
 		fmt.Printf("     relatedTokens: %s\n", strings.Join(tokens, ", "))

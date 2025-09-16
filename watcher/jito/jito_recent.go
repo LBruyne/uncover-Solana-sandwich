@@ -10,7 +10,8 @@ import (
 	"watcher/utils"
 )
 
-func RunJitoCmd() error {
+// RunJitoCmd2 fetches recent Jito bundles in a loop and stores them in the database.
+func RunJitoCmd2() error {
 	// Initialize db
 	ch := db.NewClickhouse()
 	defer ch.Close()
@@ -95,19 +96,6 @@ func RunJitoCmd() error {
 		// Dynamic limit adjustment
 		actualInsertNum := len(toInsert)
 		overlapNum := actualFetched - actualInsertNum
-		// if !firstQuery {
-		// 	if overlapNum == 0 {
-		// 		limit = limit * 2
-		// 	} else {
-		// 		adjusted := int(float64(actualInsertNum) * 1.5)
-		// 		if adjusted < config.JITO_RECENT_FETCH_LIMIT/2 {
-		// 			adjusted = config.JITO_RECENT_FETCH_LIMIT / 2
-		// 		}
-		// 		limit = max(adjusted, config.JITO_RECENT_FETCH_LIMIT)
-		// 	}
-		// }
-		// firstQuery = false
-
 		// Report summary
 		logger.JitoLogger.Info("Summary of Jito bundle query",
 			"current_limit", limit,

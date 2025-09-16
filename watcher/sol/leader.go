@@ -8,7 +8,7 @@ import (
 	"watcher/logger"
 )
 
-func RunSlotCmd(startSlot uint64) error {
+func RunSlotLeaderCmd(startSlot uint64) error {
 	// Initialize db
 	ch := db.NewClickhouse()
 	defer ch.Close()
@@ -20,22 +20,22 @@ func RunSlotCmd(startSlot uint64) error {
 	}
 	logger.SolLogger.Info("Last slot leader in DB", "slot", lastSlotInDB)
 	// Fetch current slot from Solana RPC
-	currentSlotFromRpc, err := GetCurrentSlot()
+	currentSolanaSlot, err := GetCurrentSlot()
 	if err != nil {
 		return fmt.Errorf("failed to get current slot: %w", err)
 	}
-	logger.SolLogger.Info("Current slot from Solana RPC", "slot", currentSlotFromRpc)
-	logger.SolLogger.Info("Fetch slot leaders statistic", "start_from_input", startSlot, "last_in_DB", lastSlotInDB, "current_from_rpc", currentSlotFromRpc)
+	logger.SolLogger.Info("Current slot from Solana RPC", "slot", currentSolanaSlot)
+	logger.SolLogger.Info("Fetch slot leaders:", "start_from_input", startSlot, "last_in_DB", lastSlotInDB, "current_from_rpc", currentSolanaSlot)
 	// Use startSlot, lastSlot, currentSlot to determine the starting point:
 	// 1. if startSlot < lastSlotInDB, set startSlot = lastSlotInDB + 1
 	startSlot = max(startSlot, lastSlotInDB+1)
-	if startSlot > currentSlotFromRpc {
-		logger.SolLogger.Warn("Start slot is greater than current slot, nothing to do", "start", startSlot, "current", currentSlotFromRpc)
+	if startSlot > currentSolanaSlot {
+		logger.SolLogger.Warn("Start slot is greater than current slot, nothing to do", "start", startSlot, "current", currentSolanaSlot)
 		return nil
 	}
 	// 2. if currentSlot - startSlot < max gap, fetch start from startSlot,
 	// otherwise, jump to currentSlot directly
-	if startSlot+config.SOL_FETCH_SLOT_LEADER_MAX_GAP > currentSlotFromRpc {
+	if startSlot+config.SOL_FETCH_SLOT_LEADER_MAX_GAP > currentSolanaSlot {
 		// Sync from startSlot
 		logger.SolLogger.Info("Syncing slot leaders", "start", startSlot)
 		for {
@@ -84,12 +84,12 @@ func RunSlotCmd(startSlot uint64) error {
 			time.Sleep(config.SOL_FETCH_SLOT_LEADER_SHORT_INTERVAL)
 		}
 	} else {
-		startSlot = currentSlotFromRpc
+		startSlot = currentSolanaSlot
 		logger.SolLogger.Info("Start slot too far behind current slot, start from current slot", "start", startSlot)
 	}
 
 	// Sync from currentSlot
-	logger.SolLogger.Info("Syncing slot leaders, starting from current slot", "current", currentSlotFromRpc)
+	logger.SolLogger.Info("Syncing slot leaders, starting from current slot", "current", currentSolanaSlot)
 	for {
 		currentSlot, err := GetCurrentSlot()
 		if err != nil {

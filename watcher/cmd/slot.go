@@ -10,7 +10,7 @@ import (
 )
 
 var slotCmd = cobra.Command{
-	Use:   "slot-info",
+	Use:   "leader",
 	Short: "Start monitoring, syncing and storing Slot information",
 	Run: func(cmd *cobra.Command, args []string) {
 		logger.InitLogs("slot")
@@ -28,9 +28,9 @@ var slotCmd = cobra.Command{
 		// 	return
 		// }
 
-		logger.SolLogger.Info("Running cmd slot-info, starting slot information monitoring...", "start", slotStart)
+		logger.SolLogger.Info("Running cmd leader, starting slot information monitoring...", "start", slotStart)
 
-		if err := sol.RunSlotCmd(slotStart); err != nil {
+		if err := sol.RunSlotLeaderCmd(slotStart); err != nil {
 			logger.SolLogger.Error("Error running Slot command", "error", err)
 		}
 	},

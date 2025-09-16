@@ -3,6 +3,8 @@ package jito
 import (
 	"fmt"
 	"strconv"
+	"strings"
+	"watcher/config"
 	"watcher/logger"
 	"watcher/utils"
 
@@ -54,7 +56,7 @@ func GetRecentBundles(limit int) ([]RecentBundle, error) {
 	}
 
 	var result []RecentBundle
-	err := utils.GetUrlResponse(GetJitoBundleURL()+"/recent", params, &result, logger.JitoLogger)
+	err := utils.GetUrlResponseWithRetry(GetJitoBundleURL()+"/recent", params, &result, config.DefaultRetryTimes, logger.JitoLogger)
 	if err != nil {
 		return nil, fmt.Errorf("GetRecentBundles failed: %w", err)
 	}
@@ -66,8 +68,12 @@ func GetBundlesBySlot(slot uint64) ([]SlotBundle, error) {
 
 	var result []SlotBundle
 	// This endpoint is link .../bundles/slot/100000000
-	err := utils.GetUrlResponse(GetJitoBundleURL()+"/slot/"+strconv.FormatUint(slot, 10), params, &result, logger.JitoLogger)
+	err := utils.GetUrlResponseWithRetry(GetJitoBundleURL()+"/slot/"+strconv.FormatUint(slot, 10), params, &result, config.DefaultRetryTimes, logger.JitoLogger)
 	if err != nil {
+		if strings.Contains(err.Error(), utils.NO_BUNDLE) {
+			return []SlotBundle{}, nil // No bundles for this slot
+		}
+
 		return nil, fmt.Errorf("GetBundlesBySlot failed: %w", err)
 	}
 	return result, nil

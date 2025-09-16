@@ -5,6 +5,10 @@ const (
 )
 
 const (
+	NO_BUNDLE = "Bundle not found"
+)
+
+const (
 	SKIPPED_BLOCK = "block is skipped or missing"
 	CLEANED_BLOCK = "block is cleaned" // blocks too early for the node
 )

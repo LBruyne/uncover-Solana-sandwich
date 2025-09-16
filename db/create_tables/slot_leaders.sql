@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS solwich.slot_leaders
 (
     `slot` UInt64,
-    `leader` String
+    `leader` String,
 )
 ENGINE = ReplacingMergeTree
 PRIMARY KEY slot
