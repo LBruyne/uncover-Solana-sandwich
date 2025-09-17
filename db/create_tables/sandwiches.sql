@@ -7,18 +7,11 @@ CREATE TABLE IF NOT EXISTS solwich.sandwiches
 
     `tokenA` String,
     `tokenB` String,
-    `consecutive` Bool,
-    `frontConsecutive` Bool,
-    `backConsecutive` Bool,
-    `victimConsecutive` Bool,
 
     `signerSame` Bool,
     `ownerSame` Bool,
     `ataSame` Bool,
-
-    `perfect` Bool,
-    `relativeDiffB` Float64,
-    `profitA` Float64,
+    `consecutive` Bool,
 
     `multiFrontRun` Bool,
     `multiBackRun` Bool,
@@ -26,6 +19,13 @@ CREATE TABLE IF NOT EXISTS solwich.sandwiches
     `frontCount` UInt16,
     `backCount` UInt16,
     `victimCount` UInt16
+    `frontConsecutive` Bool,
+    `backConsecutive` Bool,
+    `victimConsecutive` Bool,
+
+    `perfect` Bool,
+    `relativeDiffB` Float64,
+    `profitA` Float64
 )
 ENGINE = MergeTree
 ORDER BY (slot, timestamp, sandwichId)

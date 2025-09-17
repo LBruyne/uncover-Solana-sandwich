@@ -129,7 +129,7 @@ func (d *ClickhouseDB) CreateTables() error {
 			victimConsecutive Bool,
 			frontCount UInt16,
 			backCount UInt16,
-			victimCount UInt16
+			victimCount UInt16,
 
 			signerSame Bool,
 			ownerSame Bool,
@@ -137,7 +137,7 @@ func (d *ClickhouseDB) CreateTables() error {
 
 			perfect Bool,
 			relativeDiffB Float64,
-			profitA Float64,
+			profitA Float64
 		)
 		ENGINE = MergeTree
 		ORDER BY (slot, timestamp, sandwichId)
