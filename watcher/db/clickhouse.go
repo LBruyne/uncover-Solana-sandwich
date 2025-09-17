@@ -289,17 +289,7 @@ func (d *ClickhouseDB) InsertSlotBundles(statuses []*types.SlotBundlesStatus) er
 		return fmt.Errorf("failed to prepare batch: %w", err)
 	}
 	for _, s := range statuses {
-		if err := batch.AppendStruct(struct {
-			Slot          uint64
-			BundleFetched bool
-			BundleCount   uint64
-			BundleTxCount uint64
-		}{
-			Slot:          s.Slot,
-			BundleFetched: s.BundleFetched,
-			BundleCount:   s.BundleCount,
-			BundleTxCount: s.BundleTxCount,
-		}); err != nil {
+		if err := batch.AppendStruct(s); err != nil {
 			return fmt.Errorf("failed to append struct: %w", err)
 		}
 	}
@@ -328,27 +318,7 @@ func (d *ClickhouseDB) InsertSlotTxs(statuses []*types.SlotTxsStatus) error {
 		return fmt.Errorf("failed to prepare batch: %w", err)
 	}
 	for _, s := range statuses {
-		if err := batch.AppendStruct(struct {
-			Slot                    uint64
-			TxFetched               bool
-			TxCount                 uint64
-			ValidTxCount            uint64
-			SandwichFetched         bool
-			SandwichCount           uint64
-			SandwichVictimCount     uint64
-			SandwichTxCount         uint64
-			SandwichInBundleChecked bool
-		}{
-			Slot:                    s.Slot,
-			TxFetched:               s.TxFetched,
-			TxCount:                 s.TxCount,
-			ValidTxCount:            s.ValidTxCount,
-			SandwichFetched:         s.SandwichFetched,
-			SandwichTxCount:         s.SandwichTxCount,
-			SandwichVictimCount:     s.SandwichVictimCount,
-			SandwichCount:           s.SandwichCount,
-			SandwichInBundleChecked: s.SandwichInBundleChecked,
-		}); err != nil {
+		if err := batch.AppendStruct(s); err != nil {
 			return fmt.Errorf("failed to append struct: %w", err)
 		}
 	}
@@ -359,7 +329,7 @@ func (d *ClickhouseDB) UpdateSlotTxsCheckInBundle(slot uint64, check bool) error
 	if err := d.conn.Exec(context.Background(), "SET mutations_sync = 1"); err != nil {
 		return fmt.Errorf("failed to set mutations_sync: %w", err)
 	}
-	q := `ALTER TABLE solwich.slot_txs UPDATE SandwichInBundleChecked = ? WHERE slot = ?`
+	q := `ALTER TABLE solwich.slot_txs UPDATE sandwichInBundleChecked = ? WHERE slot = ?`
 	return d.conn.Exec(context.Background(), q, check, slot)
 }
 
@@ -462,7 +432,7 @@ func (d *ClickhouseDB) QueryFirstSlotToCheckInBundle() (uint64, error) {
 		SELECT ifNull(min(t.slot), toUInt64(0))
 		FROM solwich.slot_txs t
 		ANY INNER JOIN solwich.slot_bundles b USING (slot)
-		WHERE t.txFetched = 1 AND t.SandwichFetched = 1 AND t.SandwichInBundleChecked = 0
+		WHERE t.txFetched = 1 AND t.sandwichFetched = 1 AND t.sandwichInBundleChecked = 0
 		  AND b.bundleFetched = 1
 	`)
 	var slot uint64

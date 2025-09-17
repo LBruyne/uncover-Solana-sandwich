@@ -45,6 +45,7 @@ Now, create your own configuration files and environment variables about databas
 
 - Refer to [.env.example](./.env.example) and create your own `.env` file. You need to set the database connection parameters.
 - Refer to [config.example.yaml](./config.example.yaml) and create your own `config.yaml` file. You need to set the Solana RPC URL and Jito API URL.
+- Update the `LogPath` in [config.go](./config/config.go) to your desired log folder. Make sure the folder path is writable.
 
 ## Setup Golang environment and build the project
 

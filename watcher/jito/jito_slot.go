@@ -23,7 +23,7 @@ func RunJitoCmd(startSlot uint64) error {
 		return fmt.Errorf("QueryLatestBundleSlot failed: %w", err)
 	} else if ok {
 		logger.SolLogger.Info("Last bundle in DB", "slot", s)
-		if s >= config.MIN_START_SLOT {
+		if s >= config.MIN_START_SLOT && s >= startSlot {
 			startSlot = s + 1
 		}
 	}
@@ -36,7 +36,7 @@ func RunJitoCmd(startSlot uint64) error {
 		logger.SolLogger.Warn("Start slot is greater than current slot, nothing to do", "start", startSlot, "current", currentSlot)
 		return nil
 	}
-	logger.JitoLogger.Info("Starting Jito bundle fetcher", "start_slot", startSlot, "current_solana_slot", currentSlot)
+	logger.JitoLogger.Info("Starting Jito bundle fetcher", "start_slot", startSlot, "current_slot", currentSlot)
 
 	// Task 1: fetch bundles by slot, from startSlot
 	go func(_startSlot uint64) {
@@ -116,6 +116,7 @@ func RunJitoCmd(startSlot uint64) error {
 			time.Sleep(config.JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL)
 			continue
 		}
+		logger.JitoLogger.Info("Checking sandwich_txs in bundle", "slot", slot)
 
 		// For that slot, query all bundle txs
 		bundleTxs, err := ch.QueryBundleTxsBySlot(slot)
@@ -131,10 +132,6 @@ func RunJitoCmd(startSlot uint64) error {
 			time.Sleep(config.JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL)
 			continue
 		}
-		if len(swTxs) == 0 {
-			time.Sleep(config.JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL)
-			continue
-		}
 
 		hit := intersectTxs(bundleTxs, swTxs)
 		logger.JitoLogger.Info("Sandwich check", "slot", slot, "bundle_txs", len(bundleTxs), "sandwich_txs", len(swTxs), "hits", len(hit))
@@ -143,14 +140,14 @@ func RunJitoCmd(startSlot uint64) error {
 			if err := ch.UpdateSandwichTxsInBundle(slot, hit); err != nil {
 				logger.JitoLogger.Error("UpdateSandwichTxsInBundle failed", "slot", slot, "err", err, "hits", len(hit))
 			} else {
-				logger.JitoLogger.Info("Marked inBundle", "slot", slot, "hits", len(hit))
+				logger.JitoLogger.Info("Finished marking sandwich_txs", "slot", slot, "hits", len(hit))
 			}
 		}
 		// Finally mark that slot as checked
 		if err := ch.UpdateSlotTxsCheckInBundle(slot, true); err != nil {
 			logger.JitoLogger.Error("UpdateSlotTxsCheckInBundle failed", "slot", slot, "err", err)
 		}
-		logger.JitoLogger.Info("Checked sandwich_txs in bundle", "slot", slot, "hits", len(hit))
+		logger.JitoLogger.Info("Finished checking sandwich_txs in bundle for", "slot", slot, "num_sandwich_txs_in_bundle", len(hit))
 	}
 }
 

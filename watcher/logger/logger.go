@@ -10,6 +10,8 @@ import (
 	"watcher/config"
 )
 
+const MaxLogSize = 100 * 1024 * 1024 // 100 MB
+
 var (
 	SolLogger    *slog.Logger
 	JitoLogger   *slog.Logger
@@ -113,6 +115,22 @@ func CloseAll() {
 	}
 }
 
+func openLogFile(path string) (*os.File, *bufio.Writer, error) {
+	if info, err := os.Stat(path); err == nil && info.Size() > MaxLogSize {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0666)
+		if err != nil {
+			return nil, nil, err
+		}
+		return file, bufio.NewWriter(file), nil
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	if err != nil {
+		return nil, nil, err
+	}
+	return file, bufio.NewWriter(file), nil
+}
+
 func init() {
 	var err error
 
@@ -125,12 +143,11 @@ func init() {
 	}
 
 	timestamp := time.Now().Format("20060102_150405")
-	globalFile, err = os.OpenFile(config.LogPath+"watcher_"+timestamp+"_global.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	globalFile, globalBuf, err = openLogFile(config.LogPath + "watcher_" + timestamp + "_global.log")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	globalBuf = bufio.NewWriter(globalFile)
 	// GlobalLogger
 	GlobalLogger = slog.New(&multiHandler{
 		handlers: []slog.Handler{
@@ -153,17 +170,15 @@ func InitLogs(cmdName string) {
 
 	// Filename is like: "watcher_20231010_150405_tool_sol.log"
 	timestamp := time.Now().Format("20060102_150405")
-	solFile, err = os.OpenFile(config.LogPath+"watcher_"+timestamp+"_"+cmdName+"_sol.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
-	if err != nil {
-		log.Fatal(err)
-	}
-	jitoFile, err = os.OpenFile(config.LogPath+"watcher_"+timestamp+"_"+cmdName+"_sol.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
-	if err != nil {
-		log.Fatal(err)
-	}
 
-	solBuf = bufio.NewWriter(solFile)
-	jitoBuf = bufio.NewWriter(jitoFile)
+	solFile, solBuf, err = openLogFile(config.LogPath + "watcher_" + timestamp + "_" + cmdName + "_sol.log")
+	if err != nil {
+		log.Fatal(err)
+	}
+	jitoFile, jitoBuf, err = openLogFile(config.LogPath + "watcher_" + timestamp + "_" + cmdName + "_jito.log")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// SolLogger
 	SolLogger = slog.New(&multiHandler{

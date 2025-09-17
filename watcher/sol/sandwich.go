@@ -88,7 +88,7 @@ func RunSandwichCmd(startSlot uint64) error {
 		// Update next start slot
 		startSlot += uint64(numToFetch)
 		// Sleep a while
-		logger.SolLogger.Info("Sleeping for "+config.SOL_FETCH_SLOT_LEADER_LONG_INTERVAL.String(), "next_start", startSlot)
+		logger.SolLogger.Info("Sleeping for "+config.SOL_FETCH_SLOT_DATA_SHORT_INTERVAL.String(), "next_start", startSlot)
 		time.Sleep(config.SOL_FETCH_SLOT_DATA_SHORT_INTERVAL)
 	}
 }
@@ -226,8 +226,8 @@ func StoreSlotSandwichStatusToDB(ch db.Database, blks types.Blocks, inBlockSandw
 	// TODO: Add cross-block sandwich tx num to corresponding slots
 
 	statuses := make([]*types.SlotTxsStatus, 0, len(blks))
-	for i, blk := range blks {
-		statuses[i] = &types.SlotTxsStatus{
+	for _, blk := range blks {
+		statuses = append(statuses, &types.SlotTxsStatus{
 			Slot:                    blk.Slot,
 			TxFetched:               true,
 			TxCount:                 uint64(len(blk.Txs)),
@@ -237,7 +237,7 @@ func StoreSlotSandwichStatusToDB(ch db.Database, blks types.Blocks, inBlockSandw
 			SandwichCount:           slotToSandwichCount[blk.Slot],
 			SandwichVictimCount:     slotToSandwichVictimCount[blk.Slot],
 			SandwichInBundleChecked: false,
-		}
+		})
 	}
 
 	if err := ch.InsertSlotTxs(statuses); err != nil {
