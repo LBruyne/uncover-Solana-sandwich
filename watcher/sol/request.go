@@ -21,11 +21,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-var SolonaRpcURL string
+var SolanaRpcURL string
 
 func GetSolanaRpcURL() string {
-	if SolonaRpcURL != "" {
-		return SolonaRpcURL
+	if SolanaRpcURL != "" {
+		return SolanaRpcURL
 	}
 	rpc := viper.GetString("sol.rpc")
 	if rpc != "" {

@@ -223,8 +223,41 @@ func (d *ClickhouseDB) UpsertSlotBundleStatus(slot uint64, fetched bool, bundleC
 	return d.conn.Exec(context.Background(), q, slot, fetched, bundleCount, bundleTxCount, checked)
 }
 
+func (d *ClickhouseDB) UpsertSandwichFetched(slot uint64) error {
+	ctx := context.Background()
+	if err := d.conn.Exec(ctx, "SET mutations_sync = 1"); err != nil {
+		return err
+	}
+
+	if err := d.conn.Exec(ctx,
+		"ALTER TABLE solwich.slot_bundle UPDATE SandwichFetched = 1 WHERE slot = ?",
+		slot,
+	); err != nil {
+		return err
+	}
+
+	const insertIfNotExists = `
+	INSERT INTO solwich.slot_bundle
+		(slot, SandwichFetched, bundleFetched, bundleCount, bundleTxCount, SandwichInBundleChecked)
+	SELECT
+		?,    /* slot */
+		1,    /* SandwichFetched */
+		0,    /* bundleFetched */
+		0,    /* bundleCount */
+		0,    /* bundleTxCount */
+		0     /* SandwichInBundleChecked */
+	FROM system.one
+	WHERE NOT EXISTS (SELECT 1 FROM solwich.slot_bundle WHERE slot = ?)
+	`
+	return d.conn.Exec(ctx, insertIfNotExists, slot, slot)
+}
+
 func (d *ClickhouseDB) UpdateSlotBundleStatusSandwichChecked(slot uint64) error {
-	return d.UpsertSlotBundleStatus(slot, true, 0, 0, true)
+	if err := d.conn.Exec(context.Background(), "SET mutations_sync = 1"); err != nil {
+		return err
+	}
+	q := "ALTER TABLE solwich.slot_bundle UPDATE SandwichInBundleChecked = 1 WHERE slot = ?"
+	return d.conn.Exec(context.Background(), q, slot)
 }
 
 func (d *ClickhouseDB) InsertSlotLeaders(leaders types.SlotLeaders) error {

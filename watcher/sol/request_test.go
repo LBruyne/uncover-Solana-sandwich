@@ -8,11 +8,11 @@ import (
 
 func init() {
 	logger.InitLogs("sol-test")
-	SolonaRpcURL = "http://64.130.44.232:8899"
+	SolanaRpcURL = "http://64.130.32.137:8899"
 }
 
 func TestGetSlotLeadersRealAPI(t *testing.T) {
-	if SolonaRpcURL == "" {
+	if SolanaRpcURL == "" {
 		t.Skip("SolanaRpcURL not configured, skipping real API test")
 	}
 
@@ -36,7 +36,7 @@ func TestGetSlotLeadersRealAPI(t *testing.T) {
 }
 
 func TestGetCurrentSlotRealAPI(t *testing.T) {
-	if SolonaRpcURL == "" {
+	if SolanaRpcURL == "" {
 		t.Skip("SolanaRpcURL not configured, skipping real API test")
 	}
 

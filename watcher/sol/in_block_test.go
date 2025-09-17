@@ -2,7 +2,6 @@ package sol
 
 import (
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
@@ -70,12 +69,9 @@ func TestFindInBlockSandwichesBySlotParallel(t *testing.T) {
 		t.Fatalf("GetBlocks returned no blocks")
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
 	tt2 := time.Now()
-	res := ProcessInBlockSandwich(blks, &wg)
+	res := ProcessInBlockSandwich(blks)
 	fmt.Printf("ProcessInBlockSandwich time cost: %s\n", time.Since(tt2).String())
-	wg.Wait()
 
 	fmt.Printf("Detected %d in-block sandwiches in slot=%d\n\n", len(res), slot)
 	for i, s := range res {

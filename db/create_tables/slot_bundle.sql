@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS solwich.slot_bundle
     `bundleFetched` Bool,
     `bundleCount` UInt64,
     `bundleTxCount` UInt64,
+    `SandwichFetched` Bool,
     `SandwichInBundleChecked` Bool,
 )
 ENGINE = ReplacingMergeTree

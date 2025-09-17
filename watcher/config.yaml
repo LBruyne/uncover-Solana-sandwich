@@ -2,8 +2,4 @@ jito:
   bundles-url: https://bundles.jito.wtf/api/v1/bundles
 sol:
   rpc-helius: https://api.mainnet-beta.solana.com
-  rpc: http://64.130.44.232:8899
-sandwich:
-  similarThreshold: 10      # specify frontrun & backrun similar range, e.g. 1/10
-  parallel-requesting: 8    # parallel requesting num of slot
-  parallel-processing: 10   # parallel processing of sandwiches
+  rpc: http://64.130.44.232:8899 # replace with correct RPC 

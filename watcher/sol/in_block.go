@@ -206,6 +206,7 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 	if frontSigner != backSigner {
 		threshold = 2
 	}
+
 	// For a pool in frontTx(s), A is incomeToken, B is expenseTokens; in backTx(s), B is incomeToken, A is expenseToken
 	// Check the amount condition: B in front and back have valid and similar trading amounts (within threshold)
 	var frontAmtB float64

@@ -17,14 +17,16 @@ func RunSandwichCmd(startSlot uint64) error {
 	ch = db.NewClickhouse()
 	defer ch.Close()
 
-	// TODO: refine startSlot logic
-	currentSlotFromRpc, err := GetCurrentSlot()
+	currentSlot, err := GetCurrentSlot()
 	if err != nil {
 		return fmt.Errorf("failed to get current slot: %w", err)
 	}
-	logger.SolLogger.Info("Current slot from Solana RPC", "slot", currentSlotFromRpc)
-	startSlot = currentSlotFromRpc - config.SOL_FETCH_SLOT_DATA_MAX_GAP
-	logger.SolLogger.Info("Fetch slot setting adjusts", "start", startSlot, "current_from_rpc", currentSlotFromRpc)
+	logger.SolLogger.Info("Current slot from Solana RPC", "slot", currentSlot)
+
+	if startSlot < currentSlot-config.SOL_FETCH_SLOT_DATA_MAX_GAP || startSlot > currentSlot {
+		startSlot = currentSlot - config.SOL_FETCH_SLOT_DATA_MAX_GAP
+	}
+	logger.SolLogger.Info("Fetch slot setting adjusts", "start", startSlot, "current_from_rpc", currentSlot)
 
 	logger.SolLogger.Info("Syncing slot data start from", "start", startSlot)
 	for {
@@ -34,15 +36,20 @@ func RunSandwichCmd(startSlot uint64) error {
 			continue
 		}
 
+		if startSlot < currentSlot-config.SOL_FETCH_SLOT_DATA_MAX_GAP {
+			startSlot = currentSlot - config.SOL_FETCH_SLOT_DATA_MAX_GAP
+			logger.SolLogger.Info("Start slot too old, adjust to", "start", startSlot, "current", currentSlot-config.SOL_FETCH_SLOT_DATA_MAX_GAP)
+		}
+
 		numToFetch := config.SOL_FETCH_SLOT_DATA_SLOT_NUM
 		if currentSlot-startSlot < config.SOL_FETCH_SLOT_DATA_SLOT_NUM {
-			logger.SolLogger.Info("Not enough new slots, sleep and retry after "+config.SOL_FETCH_SLOT_DATA_INTERVAL.String(), "start", startSlot, "current", currentSlot)
-			time.Sleep(config.SOL_FETCH_SLOT_DATA_INTERVAL)
+			logger.SolLogger.Info("Not enough new slots, sleep and retry after "+config.SOL_FETCH_SLOT_DATA_LONG_INTERVAL.String(), "start", startSlot, "current", currentSlot)
+			time.Sleep(config.SOL_FETCH_SLOT_DATA_LONG_INTERVAL)
 			continue
 		}
 
 		// Fetch blocks
-		logger.SolLogger.Info("Fetch slot data (start)", "start", startSlot, "current", currentSlot, "num_to_fetch", numToFetch)
+		logger.SolLogger.Info("Fetch slot data (start)", "start", startSlot, "current", currentSlot, "diff", currentSlot-startSlot, "num_to_fetch", numToFetch)
 		fetchTimeBefore := time.Now()
 		blocks := GetBlocks(startSlot, uint64(numToFetch))
 		fetchTime := time.Since(fetchTimeBefore)
@@ -60,12 +67,12 @@ func RunSandwichCmd(startSlot uint64) error {
 		logger.SolLogger.Info("Process slot data (done)", "start", startSlot, "num_in_block_sandwiches", len(inBlockSandwiches), "num_cross_block_sandwiches", len(crossBlockSandwiches), "process_time", time.Since(timeProess).String())
 
 		// Test print sandwiches
-		for i, s := range inBlockSandwiches {
-			types.PPInBlockSandwich(i+1, s)
-		}
-		for i, s := range crossBlockSandwiches {
-			types.PPCrossBlockSandwich(i+1, s)
-		}
+		// for i, s := range inBlockSandwiches {
+		// 	types.PPInBlockSandwich(i+1, s)
+		// }
+		// for i, s := range crossBlockSandwiches {
+		// 	types.PPCrossBlockSandwich(i+1, s)
+		// }
 
 		// Save to DB
 		logger.SolLogger.Info("Store sandwiches to DB (start)")
@@ -75,13 +82,13 @@ func RunSandwichCmd(startSlot uint64) error {
 		}
 		logger.SolLogger.Info("Store sandwiches to DB (done)", "store_time", time.Since(timeStore).String())
 
+		// Save slot_status
+
 		// Update next start slot
 		startSlot += uint64(len(blocks))
 		// Sleep a while
 		logger.SolLogger.Info("Sleeping for "+config.SOL_FETCH_SLOT_LEADER_LONG_INTERVAL.String(), "next_start", startSlot)
-		time.Sleep(config.SOL_FETCH_SLOT_DATA_INTERVAL)
-
-		return nil // For testing, only fetch once
+		time.Sleep(config.SOL_FETCH_SLOT_DATA_SHORT_INTERVAL)
 	}
 }
 
@@ -89,28 +96,25 @@ func ProcessBlocksForSandwich(blocks types.Blocks) (inBlock []*types.InBlockSand
 	var wg sync.WaitGroup
 	inCh := make(chan []*types.InBlockSandwich, 1)
 	crCh := make(chan []*types.CrossBlockSandwich, 1)
-	wg.Add(1)
-	go func() { inCh <- ProcessInBlockSandwich(blocks, &wg) }()
-	wg.Add(1)
-	go func() { crCh <- ProcessCrossBlockSandwich(blocks, &wg) }()
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		inCh <- ProcessInBlockSandwich(blocks)
+	}()
+	go func() {
+		defer wg.Done()
+		crCh <- ProcessCrossBlockSandwich(blocks)
+	}()
+
+	inBlock = <-inCh
+	crossBlock = <-crCh
+
 	wg.Wait()
-
-	close(inCh)
-	close(crCh)
-
-	if v, ok := <-inCh; ok {
-		inBlock = v
-	}
-	if v, ok := <-crCh; ok {
-		crossBlock = v
-	}
 
 	return
 }
 
-func ProcessInBlockSandwich(blocks types.Blocks, wg *sync.WaitGroup) []*types.InBlockSandwich {
-	defer wg.Done()
-
+func ProcessInBlockSandwich(blocks types.Blocks) []*types.InBlockSandwich {
 	// Process in-block sandwiches in parallel
 	parallel := config.SOL_PROCESS_IN_BLOCK_SANDWICH_PARALLEL_NUM
 	blocksQueue := make(chan *types.Block, len(blocks))
@@ -175,8 +179,7 @@ func FindInBlockSandwiches(b *types.Block) []*types.InBlockSandwich {
 	return finder.Sandwiches
 }
 
-func ProcessCrossBlockSandwich(blocks types.Blocks, waitGroup *sync.WaitGroup) []*types.CrossBlockSandwich {
-	defer waitGroup.Done()
+func ProcessCrossBlockSandwich(blocks types.Blocks) []*types.CrossBlockSandwich {
 	return nil
 }
 
@@ -190,8 +193,8 @@ func StoreSandwichesToDB(ch db.Database, inBlockSandwiches []*types.InBlockSandw
 		sandwichTxToInsert := make([]*types.SandwichTx, 0)
 		for _, s := range inBlockSandwiches {
 			sandwichTxToInsert = append(sandwichTxToInsert, s.FrontRun...)
-			sandwichTxToInsert = append(sandwichTxToInsert, s.BackRun...)
 			sandwichTxToInsert = append(sandwichTxToInsert, s.Victims...)
+			sandwichTxToInsert = append(sandwichTxToInsert, s.BackRun...)
 		}
 		if err := ch.InsertSandwichTxs(sandwichTxToInsert); err != nil {
 			return fmt.Errorf("failed to insert in-block sandwich txs to DB: %w", err)

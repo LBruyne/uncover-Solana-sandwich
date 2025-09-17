@@ -23,23 +23,36 @@ func RunJitoCmd(startSlot uint64) error {
 		return fmt.Errorf("failed to query latest bundle by slot: %w", err)
 	} else if ok {
 		logger.SolLogger.Info("Last bundle in DB", "slot", s)
-		startSlot = s + 1
+		if s >= config.MIN_START_SLOT {
+			startSlot = s + 1
+		}
 	}
 	// Fetch current slot from Solana RPC
-	currentSolanaSlot, err := sol.GetCurrentSlot()
+	currentSlot, err := sol.GetCurrentSlot()
 	if err != nil {
 		return fmt.Errorf("failed to get current slot: %w", err)
 	}
-	if startSlot > currentSolanaSlot {
-		logger.SolLogger.Warn("Start slot is greater than current slot, nothing to do", "start", startSlot, "current", currentSolanaSlot)
+	if startSlot > currentSlot {
+		logger.SolLogger.Warn("Start slot is greater than current slot, nothing to do", "start", startSlot, "current", currentSlot)
 		return nil
 	}
-	logger.JitoLogger.Info("Starting Jito bundle fetcher", "start_slot", startSlot, "current_solana_slot", currentSolanaSlot)
+	logger.JitoLogger.Info("Starting Jito bundle fetcher", "start_slot", startSlot, "current_solana_slot", currentSlot)
 
 	// Task 1: fetch bundles by slot, from startSlot
 	go func(_startSlot uint64) {
 		s := _startSlot
 		for {
+			head, err := sol.GetCurrentSlot()
+			if err != nil {
+				logger.JitoLogger.Error("GetCurrentSlot failed", "err", err)
+				continue
+			}
+			if s > head {
+				logger.JitoLogger.Info("Reached current slot, sleep and retry", "slot", s, "current", head)
+				time.Sleep(config.JITO_CHECK_SANDWICH_INTERVAL)
+				continue
+			}
+
 			bundles, err := GetBundlesBySlot(s)
 			if err != nil {
 				logger.JitoLogger.Error("GetBundlesBySlot failed", "slot", s, "err", err)
@@ -73,7 +86,7 @@ func RunJitoCmd(startSlot uint64) error {
 			logger.JitoLogger.Info("Inserted bundles", "count", len(validBundles), "slot", s)
 
 			// Update slot_bundle status
-			if err := ch.UpsertSlotBundleStatus(s, true, uint64(len(validBundles)), txCount, false); err != nil {
+			if err := ch.UpsertSlotBundleStatus(s, len(validBundles) != 0, uint64(len(validBundles)), txCount, false); err != nil {
 				logger.JitoLogger.Error("UpsertSlotBundleStatus failed", "slot", s, "err", err)
 			} else {
 				logger.JitoLogger.Info("Slot bundle status updated", "slot", s, "bundle_count", len(validBundles), "tx_count", txCount)
@@ -83,60 +96,55 @@ func RunJitoCmd(startSlot uint64) error {
 	}(startSlot)
 
 	// Task 2: scan sandwich txs to mark inBundle
-	go func() {
-		for {
-			// Find the first (oldest) slot in sandwich_txs, that has already fetched bundles but not yet checked sandwich txs.
-			slot, err := ch.QueryOldestSlotNeedingSandwichCheck()
-			if err != nil {
-				logger.JitoLogger.Error("QueryOldestSlotNeedingSandwichCheck failed", "err", err)
-				time.Sleep(config.JITO_RECENT_FETCH_INTERVAL)
-				continue
-			}
-			if slot == 0 {
-				logger.JitoLogger.Info("No slot needs sandwich check, sleep and retry")
-				time.Sleep(config.JITO_RECENT_FETCH_INTERVAL)
-				continue
-			}
-
-			// For that slot, query all bundle txs
-			bundleTxs, err := ch.QueryBundleTxsBySlot(slot)
-			if err != nil {
-				logger.JitoLogger.Error("QueryBundleTxSignaturesBySlot failed", "slot", slot, "err", err)
-				time.Sleep(config.JITO_RECENT_FETCH_INTERVAL)
-				continue
-			}
-			// For that slot, query all sandwich txs
-			swTxs, err := ch.QuerySandwichTxsBySlot(slot)
-			if err != nil {
-				logger.JitoLogger.Error("QuerySandwichTxSignaturesBySlot failed", "slot", slot, "err", err)
-				time.Sleep(config.JITO_RECENT_FETCH_INTERVAL)
-				continue
-			}
-			if len(swTxs) == 0 {
-				time.Sleep(config.JITO_RECENT_FETCH_INTERVAL)
-				continue
-			}
-
-			hit := intersectTxs(bundleTxs, swTxs)
-			logger.JitoLogger.Info("Sandwich check", "slot", slot, "bundle_txs", len(bundleTxs), "sandwich_txs", len(swTxs), "hits", len(hit))
-			// Mark those sandwich txs as inBundle = true
-			if len(hit) > 0 {
-				if err := ch.UpdateSandwichTxsInBundle(slot, hit); err != nil {
-					logger.JitoLogger.Error("UpdateSandwichTxsInBundle failed", "slot", slot, "err", err, "hits", len(hit))
-				} else {
-					logger.JitoLogger.Info("Marked inBundle", "slot", slot, "hits", len(hit))
-				}
-			}
-			// Finally mark that slot as checked
-			if err := ch.UpdateSlotBundleStatusSandwichChecked(slot); err != nil {
-				logger.JitoLogger.Error("MarkSlotSandwichChecked failed", "slot", slot, "err", err)
-			}
-			logger.JitoLogger.Info("Marked slot sandwich checked", "slot", slot)
+	for {
+		// Find the first (oldest) slot in sandwich_txs, that has already fetched bundles but not yet checked sandwich txs.
+		slot, err := ch.QueryOldestSlotNeedingSandwichCheck()
+		if err != nil {
+			logger.JitoLogger.Error("QueryOldestSlotNeedingSandwichCheck failed", "err", err)
+			time.Sleep(config.JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL)
+			continue
 		}
-	}()
+		if slot < config.MIN_START_SLOT {
+			logger.JitoLogger.Info("No slot needs sandwich check, sleep and retry", "slot", slot, "interval", config.JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL.String())
+			time.Sleep(config.JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL)
+			continue
+		}
 
-	// Prevent exit
-	select {}
+		// For that slot, query all bundle txs
+		bundleTxs, err := ch.QueryBundleTxsBySlot(slot)
+		if err != nil {
+			logger.JitoLogger.Error("QueryBundleTxSignaturesBySlot failed", "slot", slot, "err", err)
+			time.Sleep(config.JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL)
+			continue
+		}
+		// For that slot, query all sandwich txs
+		swTxs, err := ch.QuerySandwichTxsBySlot(slot)
+		if err != nil {
+			logger.JitoLogger.Error("QuerySandwichTxSignaturesBySlot failed", "slot", slot, "err", err)
+			time.Sleep(config.JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL)
+			continue
+		}
+		if len(swTxs) == 0 {
+			time.Sleep(config.JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL)
+			continue
+		}
+
+		hit := intersectTxs(bundleTxs, swTxs)
+		logger.JitoLogger.Info("Sandwich check", "slot", slot, "bundle_txs", len(bundleTxs), "sandwich_txs", len(swTxs), "hits", len(hit))
+		// Mark those sandwich txs as inBundle = true
+		if len(hit) > 0 {
+			if err := ch.UpdateSandwichTxsInBundle(slot, hit); err != nil {
+				logger.JitoLogger.Error("UpdateSandwichTxsInBundle failed", "slot", slot, "err", err, "hits", len(hit))
+			} else {
+				logger.JitoLogger.Info("Marked inBundle", "slot", slot, "hits", len(hit))
+			}
+		}
+		// Finally mark that slot as checked
+		if err := ch.UpdateSlotBundleStatusSandwichChecked(slot); err != nil {
+			logger.JitoLogger.Error("MarkSlotSandwichChecked failed", "slot", slot, "err", err)
+		}
+		logger.JitoLogger.Info("Marked slot sandwich checked", "slot", slot)
+	}
 }
 
 func intersectTxs(txsA, txsB []string) []string {
