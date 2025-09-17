@@ -296,17 +296,16 @@ func (d *ClickhouseDB) InsertSlotBundles(statuses []*types.SlotBundlesStatus) er
 	return batch.Send()
 }
 
-func (d *ClickhouseDB) QueryLatestBundleSlot() (uint64, bool, error) {
-	row := d.conn.QueryRow(context.Background(),
-		`SELECT max(slot) FROM solwich.slot_bundles WHERE bundleFetched = 1`)
-	var slot *uint64
-	if err := row.Scan(&slot); err != nil {
-		return 0, false, fmt.Errorf("failed to query latest bundle slot: %w", err)
+func (d *ClickhouseDB) QueryEarliestAndLatestBundleSlot() (uint64, uint64, bool, error) {
+	row := d.conn.QueryRow(context.Background(), `SELECT min(slot), max(slot) FROM solwich.slot_bundles WHERE bundleFetched = 1`)
+	var earliestSlot, latestSlot *uint64
+	if err := row.Scan(&earliestSlot, &latestSlot); err != nil {
+		return 0, 0, false, fmt.Errorf("failed to query queried earliest and latest bundle slot: %w", err)
 	}
-	if slot == nil {
-		return 0, false, nil
+	if earliestSlot == nil || latestSlot == nil {
+		return 0, 0, false, nil
 	}
-	return *slot, true, nil
+	return *earliestSlot, *latestSlot, true, nil
 }
 
 func (d *ClickhouseDB) InsertSlotTxs(statuses []*types.SlotTxsStatus) error {

@@ -1,4 +1,9 @@
-./watcher reset
-./watcher leader -s 366797880 &
-./watcher sandwich -s 366797880 &
-./watcher jito -s 366797880 &
+#!/bin/bash
+
+go build .
+
+# ./watcher reset
+# nohup ./watcher jito -s 367400000 -t &
+nohup ./watcher leader -s 367400000 -t &
+
+# ./watcher sandwich -s 366797880 &

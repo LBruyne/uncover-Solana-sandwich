@@ -10,6 +10,8 @@ import (
 	"watcher/config"
 )
 
+var consoleEnabled = true
+
 const MaxLogSize = 100 * 1024 * 1024 // 100 MB
 
 var (
@@ -115,6 +117,35 @@ func CloseAll() {
 	}
 }
 
+func SetConsoleEnabled(enabled bool) {
+	consoleEnabled = enabled
+
+	if GlobalLogger != nil && globalBuf != nil {
+		GlobalLogger = slog.New(&multiHandler{handlers: makeHandlers(globalBuf, consoleEnabled)})
+	}
+	if SolLogger != nil && solBuf != nil {
+		SolLogger = slog.New(&multiHandler{handlers: makeHandlers(solBuf, consoleEnabled)})
+	}
+	if JitoLogger != nil && jitoBuf != nil {
+		JitoLogger = slog.New(&multiHandler{handlers: makeHandlers(jitoBuf, consoleEnabled)})
+	}
+}
+
+func makeHandlers(fileBuf *bufio.Writer, toConsole bool) []slog.Handler {
+	hs := make([]slog.Handler, 0, 2)
+	if toConsole {
+		hs = append(hs, &bufferedHandler{
+			handler: slog.NewTextHandler(os.Stdout, nil),
+			writer:  bufio.NewWriter(os.Stdout),
+		})
+	}
+	hs = append(hs, &bufferedHandler{
+		handler: slog.NewTextHandler(fileBuf, nil),
+		writer:  fileBuf,
+	})
+	return hs
+}
+
 func openLogFile(path string) (*os.File, *bufio.Writer, error) {
 	if info, err := os.Stat(path); err == nil && info.Size() > MaxLogSize {
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0666)
@@ -150,10 +181,7 @@ func init() {
 
 	// GlobalLogger
 	GlobalLogger = slog.New(&multiHandler{
-		handlers: []slog.Handler{
-			&bufferedHandler{handler: slog.NewTextHandler(os.Stdout, nil), writer: bufio.NewWriter(os.Stdout)},
-			&bufferedHandler{handler: slog.NewTextHandler(globalBuf, nil), writer: globalBuf},
-		},
+		handlers: makeHandlers(globalBuf, consoleEnabled),
 	})
 }
 
@@ -182,17 +210,10 @@ func InitLogs(cmdName string) {
 
 	// SolLogger
 	SolLogger = slog.New(&multiHandler{
-		handlers: []slog.Handler{
-			&bufferedHandler{handler: slog.NewTextHandler(os.Stdout, nil), writer: bufio.NewWriter(os.Stdout)},
-			&bufferedHandler{handler: slog.NewTextHandler(solBuf, nil), writer: solBuf},
-		},
+		handlers: makeHandlers(solBuf, consoleEnabled),
 	})
-
 	// JitoLogger
 	JitoLogger = slog.New(&multiHandler{
-		handlers: []slog.Handler{
-			&bufferedHandler{handler: slog.NewTextHandler(os.Stdout, nil), writer: bufio.NewWriter(os.Stdout)},
-			&bufferedHandler{handler: slog.NewTextHandler(jitoBuf, nil), writer: jitoBuf},
-		},
+		handlers: makeHandlers(jitoBuf, consoleEnabled),
 	})
 }

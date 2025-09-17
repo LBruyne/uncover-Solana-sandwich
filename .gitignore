@@ -9,6 +9,9 @@
 !db/create_tables/**.sql
 
 **/**.log
+**/**.out
+**/**.pid
+**/**.exe
 
 **/go.sum
 

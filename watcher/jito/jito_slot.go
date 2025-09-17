@@ -19,12 +19,12 @@ func RunJitoCmd(startSlot uint64) error {
 	defer ch.Close()
 
 	// First load existing bundles from DB into cache to avoid re-insertion/overlap
-	if s, ok, err := ch.QueryLatestBundleSlot(); err != nil {
-		return fmt.Errorf("QueryLatestBundleSlot failed: %w", err)
+	if t, h, ok, err := ch.QueryEarliestAndLatestBundleSlot(); err != nil {
+		return fmt.Errorf("QueryEarliestAndLatestBundleSlot failed: %w", err)
 	} else if ok {
-		logger.SolLogger.Info("Last bundle in DB", "slot", s)
-		if s >= config.MIN_START_SLOT && s >= startSlot {
-			startSlot = s + 1
+		logger.JitoLogger.Info("Existing bundle slots in DB", "earliest", t, "latest", h)
+		if startSlot > t && startSlot <= h {
+			startSlot = h + 1
 		}
 	}
 	// Fetch current slot from Solana RPC
