@@ -20,7 +20,7 @@ func RunJitoCmd(startSlot uint64) error {
 
 	// First load existing bundles from DB into cache to avoid re-insertion/overlap
 	if s, ok, err := ch.QueryLatestBundleSlot(); err != nil {
-		return fmt.Errorf("failed to query latest bundle by slot: %w", err)
+		return fmt.Errorf("QueryLatestBundleSlot failed: %w", err)
 	} else if ok {
 		logger.SolLogger.Info("Last bundle in DB", "slot", s)
 		if s >= config.MIN_START_SLOT {
@@ -30,7 +30,7 @@ func RunJitoCmd(startSlot uint64) error {
 	// Fetch current slot from Solana RPC
 	currentSlot, err := sol.GetCurrentSlot()
 	if err != nil {
-		return fmt.Errorf("failed to get current slot: %w", err)
+		return fmt.Errorf("GetCurrentSlot failed: %w", err)
 	}
 	if startSlot > currentSlot {
 		logger.SolLogger.Warn("Start slot is greater than current slot, nothing to do", "start", startSlot, "current", currentSlot)
@@ -81,13 +81,20 @@ func RunJitoCmd(startSlot uint64) error {
 
 			// Insert new bundles into DB
 			if err := ch.InsertJitoBundles(validBundles); err != nil {
-				logger.JitoLogger.Error("Insert JitoBundles failed", "err", err)
+				logger.JitoLogger.Error("InsertJitoBundles failed", "err", err)
 			}
 			logger.JitoLogger.Info("Inserted bundles", "count", len(validBundles), "slot", s)
 
 			// Update slot_bundle status
-			if err := ch.UpsertSlotBundleStatus(s, len(validBundles) != 0, uint64(len(validBundles)), txCount, false); err != nil {
-				logger.JitoLogger.Error("UpsertSlotBundleStatus failed", "slot", s, "err", err)
+			status := types.SlotBundlesStatus{
+				Slot:          s,
+				BundleFetched: true,
+				BundleCount:   uint64(len(validBundles)),
+				BundleTxCount: txCount,
+			}
+
+			if err := ch.InsertSlotBundles([]*types.SlotBundlesStatus{&status}); err != nil {
+				logger.JitoLogger.Error("InsertSlotBundles failed", "slot", s, "err", err)
 			} else {
 				logger.JitoLogger.Info("Slot bundle status updated", "slot", s, "bundle_count", len(validBundles), "tx_count", txCount)
 			}
@@ -97,10 +104,10 @@ func RunJitoCmd(startSlot uint64) error {
 
 	// Task 2: scan sandwich txs to mark inBundle
 	for {
-		// Find the first (oldest) slot in sandwich_txs, that has already fetched bundles but not yet checked sandwich txs.
-		slot, err := ch.QueryOldestSlotNeedingSandwichCheck()
+		// Find the first (oldest) slot in sandwich_txs, that has already checked sandwich, but not yet checked inBundle and bundles have been fetched.
+		slot, err := ch.QueryFirstSlotToCheckInBundle()
 		if err != nil {
-			logger.JitoLogger.Error("QueryOldestSlotNeedingSandwichCheck failed", "err", err)
+			logger.JitoLogger.Error("QueryFirstSlotToCheckInBundle failed", "err", err)
 			time.Sleep(config.JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL)
 			continue
 		}
@@ -113,14 +120,14 @@ func RunJitoCmd(startSlot uint64) error {
 		// For that slot, query all bundle txs
 		bundleTxs, err := ch.QueryBundleTxsBySlot(slot)
 		if err != nil {
-			logger.JitoLogger.Error("QueryBundleTxSignaturesBySlot failed", "slot", slot, "err", err)
+			logger.JitoLogger.Error("QueryBundleTxsBySlot failed", "slot", slot, "err", err)
 			time.Sleep(config.JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL)
 			continue
 		}
 		// For that slot, query all sandwich txs
 		swTxs, err := ch.QuerySandwichTxsBySlot(slot)
 		if err != nil {
-			logger.JitoLogger.Error("QuerySandwichTxSignaturesBySlot failed", "slot", slot, "err", err)
+			logger.JitoLogger.Error("QuerySandwichTxsBySlot failed", "slot", slot, "err", err)
 			time.Sleep(config.JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL)
 			continue
 		}
@@ -140,10 +147,10 @@ func RunJitoCmd(startSlot uint64) error {
 			}
 		}
 		// Finally mark that slot as checked
-		if err := ch.UpdateSlotBundleStatusSandwichChecked(slot); err != nil {
-			logger.JitoLogger.Error("MarkSlotSandwichChecked failed", "slot", slot, "err", err)
+		if err := ch.UpdateSlotTxsCheckInBundle(slot, true); err != nil {
+			logger.JitoLogger.Error("UpdateSlotTxsCheckInBundle failed", "slot", slot, "err", err)
 		}
-		logger.JitoLogger.Info("Marked slot sandwich checked", "slot", slot)
+		logger.JitoLogger.Info("Checked sandwich_txs in bundle", "slot", slot, "hits", len(hit))
 	}
 }
 

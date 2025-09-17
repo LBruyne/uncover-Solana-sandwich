@@ -54,6 +54,7 @@ func RunSlotLeaderCmd(startSlot uint64) error {
 					logger.SolLogger.Error("Failed to get slot leaders", "start", startSlot, "limit", limit, "err", err)
 					continue
 				}
+
 				err = ch.InsertSlotLeaders(leaders)
 				if err != nil {
 					logger.SolLogger.Error("Failed to insert slot leaders", "err", err)

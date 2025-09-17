@@ -1,11 +1,9 @@
-CREATE TABLE IF NOT EXISTS solwich.slot_bundle
+CREATE TABLE IF NOT EXISTS solwich.slot_bundles
 (
     `slot` UInt64,
     `bundleFetched` Bool,
     `bundleCount` UInt64,
-    `bundleTxCount` UInt64,
-    `SandwichFetched` Bool,
-    `SandwichInBundleChecked` Bool,
+    `bundleTxCount` UInt64
 )
 ENGINE = ReplacingMergeTree
 PRIMARY KEY slot

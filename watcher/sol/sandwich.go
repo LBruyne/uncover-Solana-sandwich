@@ -75,17 +75,18 @@ func RunSandwichCmd(startSlot uint64) error {
 		// }
 
 		// Save to DB
-		logger.SolLogger.Info("Store sandwiches to DB (start)")
+		logger.SolLogger.Info("Store sandwiches related information to DB (start)")
 		timeStore := time.Now()
 		if err := StoreSandwichesToDB(ch, inBlockSandwiches, crossBlockSandwiches); err != nil {
 			logger.SolLogger.Error("Failed to store sandwiches to DB", "err", err)
 		}
-		logger.SolLogger.Info("Store sandwiches to DB (done)", "store_time", time.Since(timeStore).String())
-
-		// Save slot_status
+		if err := StoreSlotSandwichStatusToDB(ch, blocks, inBlockSandwiches, crossBlockSandwiches); err != nil {
+			logger.SolLogger.Error("Failed to store slot sandwich status to DB", "err", err)
+		}
+		logger.SolLogger.Info("Store sandwiches related information to DB (done)", "store_time", time.Since(timeStore).String())
 
 		// Update next start slot
-		startSlot += uint64(len(blocks))
+		startSlot += uint64(numToFetch)
 		// Sleep a while
 		logger.SolLogger.Info("Sleeping for "+config.SOL_FETCH_SLOT_LEADER_LONG_INTERVAL.String(), "next_start", startSlot)
 		time.Sleep(config.SOL_FETCH_SLOT_DATA_SHORT_INTERVAL)
@@ -205,6 +206,42 @@ func StoreSandwichesToDB(ch db.Database, inBlockSandwiches []*types.InBlockSandw
 	if len(crossBlockSandwiches) > 0 {
 		// TODO: implement cross-block sandwich storage
 		logger.SolLogger.Info("Cross-block sandwich storage not implemented yet", "num", len(crossBlockSandwiches))
+	}
+
+	return nil
+}
+
+func StoreSlotSandwichStatusToDB(ch db.Database, blks types.Blocks, inBlockSandwiches []*types.InBlockSandwich, crossBlockSandwiches []*types.CrossBlockSandwich) error {
+	// Map slot to number of sandwich txs
+	slotToSandwichTxCount := make(map[uint64]uint64)
+	slotToSandwichCount := make(map[uint64]uint64)
+	slotToSandwichVictimCount := make(map[uint64]uint64)
+	// In-block sandwiches
+	for _, s := range inBlockSandwiches {
+		slotToSandwichTxCount[s.Slot] += uint64(len(s.FrontRun) + len(s.BackRun))
+		slotToSandwichCount[s.Slot] += 1
+		slotToSandwichVictimCount[s.Slot] += uint64(len(s.Victims))
+	}
+	// Cross-block sandwiches
+	// TODO: Add cross-block sandwich tx num to corresponding slots
+
+	statuses := make([]*types.SlotTxsStatus, 0, len(blks))
+	for i, blk := range blks {
+		statuses[i] = &types.SlotTxsStatus{
+			Slot:                    blk.Slot,
+			TxFetched:               true,
+			TxCount:                 uint64(len(blk.Txs)),
+			ValidTxCount:            blk.ValidTxCount,
+			SandwichFetched:         true,
+			SandwichTxCount:         slotToSandwichTxCount[blk.Slot],
+			SandwichCount:           slotToSandwichCount[blk.Slot],
+			SandwichVictimCount:     slotToSandwichVictimCount[blk.Slot],
+			SandwichInBundleChecked: false,
+		}
+	}
+
+	if err := ch.InsertSlotTxs(statuses); err != nil {
+		return fmt.Errorf("InsertSlotTxsStatus failed: %w", err)
 	}
 
 	return nil
