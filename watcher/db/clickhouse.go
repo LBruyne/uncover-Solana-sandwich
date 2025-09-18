@@ -296,6 +296,16 @@ func (d *ClickhouseDB) InsertSlotBundles(statuses []*types.SlotBundlesStatus) er
 	return batch.Send()
 }
 
+func (d *ClickhouseDB) QuerySlotBundleBySlot(slot uint64) (uint64, error) {
+	// Query by slot
+	row := d.conn.QueryRow(context.Background(), `SELECT ifNull(max(slot), toUInt64(0)) FROM solwich.slot_bundles WHERE slot = ? and bundleFetched = 1`, slot)
+	var this uint64
+	if err := row.Scan(&this); err != nil {
+		return 0, fmt.Errorf("failed to query slot bundle by slot: %w", err)
+	}
+	return this, nil
+}
+
 func (d *ClickhouseDB) QueryEarliestAndLatestBundleSlot() (uint64, uint64, bool, error) {
 	row := d.conn.QueryRow(context.Background(), `SELECT min(slot), max(slot) FROM solwich.slot_bundles WHERE bundleFetched = 1`)
 	var earliestSlot, latestSlot *uint64

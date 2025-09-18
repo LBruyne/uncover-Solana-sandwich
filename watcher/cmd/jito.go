@@ -22,7 +22,7 @@ var jitoCmd = cobra.Command{
 
 		logger.JitoLogger.Info("Running cmd jito, starting Jito bundle monitoring and marking...")
 
-		if err := jito.RunJitoCmd(jitoStart); err != nil {
+		if err := jito.RunJitoCmd(jitoStart, !disableJitoTask1, !disableJitoTask2); err != nil {
 			logger.JitoLogger.Error("Error running Jito command", "error", err)
 		}
 	},

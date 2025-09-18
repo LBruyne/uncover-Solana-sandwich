@@ -21,6 +21,8 @@ var jitoStart uint64
 var slotStart uint64
 var sandwichStart uint64
 var notToStdout bool
+var disableJitoTask1 bool
+var disableJitoTask2 bool
 
 func init() {
 
@@ -38,6 +40,20 @@ func init() {
 		"s",
 		0,
 		fmt.Sprintf("(Optional) starting slot number (>=%d)", config.MIN_START_SLOT),
+	)
+
+	jitoCmd.Flags().BoolVar(
+		&disableJitoTask1,
+		"disable-task1",
+		false,
+		"Disable Jito Task1 (fetch bundles by slot)",
+	)
+
+	jitoCmd.Flags().BoolVar(
+		&disableJitoTask2,
+		"disable-task2",
+		false,
+		"Disable Jito Task2 (scan sandwich txs to mark inBundle)",
 	)
 
 	slotCmd.Flags().Uint64VarP(

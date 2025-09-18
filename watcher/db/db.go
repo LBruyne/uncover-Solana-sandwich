@@ -19,6 +19,7 @@ type Database interface {
 
 	// slot_bundles
 	InsertSlotBundles(statuses []*types.SlotBundlesStatus) error
+	QuerySlotBundleBySlot(slot uint64) (uint64, error)
 	QueryEarliestAndLatestBundleSlot() (uint64, uint64, bool, error)
 
 	// slot_txs

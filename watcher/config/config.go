@@ -51,7 +51,7 @@ const (
 const (
 	SOL_PROCESS_IN_BLOCK_SANDWICH_PARALLEL_NUM = 8 // number of parallel processing in-block sandwiches
 
-	JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL = 1 * time.Second // interval to mark sandwich txs in bundle
+	JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL = 10 * time.Second // interval to mark sandwich txs in bundle
 
 	SANDWICH_AMOUNT_THRESHOLD = uint(10) // relative threshold between front-run/back-run
 	SANDWICH_BACKRUN_MAX_GAP  = 10       // How long can two back-run txs be apart
