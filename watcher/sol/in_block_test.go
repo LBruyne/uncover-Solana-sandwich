@@ -12,7 +12,7 @@ import (
 var slot uint64
 
 func init() {
-	slot = 367156040 // Replace a fresh slot id
+	slot = 368747295 // Replace a fresh slot id
 }
 
 func TestFindInBlockSandwichesBySlot(t *testing.T) {
@@ -25,6 +25,13 @@ func TestFindInBlockSandwichesBySlot(t *testing.T) {
 	if blk == nil || len(blk.Txs) == 0 {
 		t.Fatalf("empty block or no txs at slot %d", slot)
 	}
+
+	// for i, tx := range blk.Txs {
+	// 	if tx.Signature == "6ZTDa1tbT22vsAcXoURNy58BzSiRv8oo6ewGxdA2M8WXUyr4swkGR54LfTiUz77EMwv7sLUT7KAgj5UM7ro8tWn" ||
+	// 		tx.Signature == "2eUKFHkcL7yweydQVkQSvS88NMikXRziZ2e5sX7VYiSQHcQJoW7fwkMpcK8eGEbJ1f23L6jcCZAfgKFA5H7i8Yrb" {
+	// 		types.PPTx(i, tx, true)
+	// 	}
+	// }
 
 	res := FindInBlockSandwiches(blk)
 

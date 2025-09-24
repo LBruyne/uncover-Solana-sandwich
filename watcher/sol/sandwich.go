@@ -57,7 +57,7 @@ func RunSandwichCmd(startSlot uint64) error {
 
 		// Test print block
 		// for _, b := range blocks {
-		// 	types.PPBlock(b, 1)
+		// 	types.PPBlock(b, 5, true)
 		// }
 
 		// Process blocks to find sandwiches
@@ -174,9 +174,9 @@ func FindInBlockSandwiches(b *types.Block) []*types.InBlockSandwich {
 		AmountThreshold: config.SANDWICH_AMOUNT_THRESHOLD,
 	}
 
-	timeFind := time.Now()
+	// timeFind := time.Now()
 	finder.Find()
-	logger.SolLogger.Info("Find in-block sandwiches", "slot", b.Slot, "num_txs", len(b.Txs), "num_sandwiches", len(finder.Sandwiches), "time_cost", time.Since(timeFind).String())
+	// logger.SolLogger.Info("Find in-block sandwiches", "slot", b.Slot, "num_txs", len(b.Txs), "num_sandwiches", len(finder.Sandwiches), "time_cost", time.Since(timeFind).String())
 	return finder.Sandwiches
 }
 

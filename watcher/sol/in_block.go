@@ -7,6 +7,8 @@ import (
 	"watcher/config"
 	"watcher/types"
 	"watcher/utils"
+
+	MapSet "github.com/deckarep/golang-set/v2"
 )
 
 type InBlockSandwichFinder struct {
@@ -73,11 +75,19 @@ func (f *InBlockSandwichFinder) Find() {
 				continue // No valid front-run tx found
 			}
 
+			// if f.Txs[frontTxEntries[0].TxIdx].Signature == "6ZTDa1tbT22vsAcXoURNy58BzSiRv8oo6ewGxdA2M8WXUyr4swkGR54LfTiUz77EMwv7sLUT7KAgj5UM7ro8tWn" {
+			// 	fmt.Printf("Debug: found specific frontTx: %+v\n", frontTxEntries)
+			// }
+
 			// Try to find backTx(s) in that may form sandwich with current frontTx(s)
 			backTxEntries := f.collectBackTxs(frontTxEntries, backTxBucket)
 			if len(backTxEntries) == 0 {
 				continue // No back-run candidate found
 			}
+
+			// if f.Txs[frontTxEntries[0].TxIdx].Signature == "6ZTDa1tbT22vsAcXoURNy58BzSiRv8oo6ewGxdA2M8WXUyr4swkGR54LfTiUz77EMwv7sLUT7KAgj5UM7ro8tWn" {
+			// 	fmt.Printf("Debug: found specific backTx: %+v\n", backTxEntries)
+			// }
 
 			// All conditions met, record the sandwich
 			// Every data structure is ready in f.last* fields
@@ -144,6 +154,10 @@ func (f *InBlockSandwichFinder) collectBackTxs(frontTxEntries []PoolEntry, backT
 
 	// Scan forward in backTxBucket to find the first valid back-run tx
 	for i, startBackEntry := range backTxBucket {
+		// if f.Txs[frontTxEntries[0].TxIdx].Signature == "6ZTDa1tbT22vsAcXoURNy58BzSiRv8oo6ewGxdA2M8WXUyr4swkGR54LfTiUz77EMwv7sLUT7KAgj5UM7ro8tWn" {
+		// 	fmt.Printf("Debug: scanning specific backTx: %+v\n", startBackEntry)
+		// }
+
 		if startBackEntry.Position <= lastFrontPos {
 			continue
 		}
@@ -181,7 +195,13 @@ func (f *InBlockSandwichFinder) collectBackTxs(frontTxEntries []PoolEntry, backT
 			candidateBackTxEntries = append(candidateBackTxEntries, backEntry)
 			lastPos = backEntry.Position
 		}
-		// Valid back-run tx accompanying with the given frontTxEntry
+
+		// if f.Txs[frontTxEntries[0].TxIdx].Signature == "6ZTDa1tbT22vsAcXoURNy58BzSiRv8oo6ewGxdA2M8WXUyr4swkGR54LfTiUz77EMwv7sLUT7KAgj5UM7ro8tWn" {
+		// 	fmt.Printf("Debug: found specific backTx: %+v\n", candidateBackTxEntries)
+		// }
+
+		// Possible valid back-run tx accompanying with the given frontTxEntries
+		// Check if they form a sandwich: amount, victim txs, etc.
 		if f.Evaluate(frontTxEntries, candidateBackTxEntries) {
 			// Mark all these txs as confirmed sandwich txs
 			return candidateBackTxEntries
@@ -195,42 +215,77 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 	if len(frontTxEntries) == 0 || len(backTxEntries) == 0 {
 		return false
 	}
-	// Threshold is a percentage, e.g., 5 means 5%, allowed difference in total amount
-	// TODO: how to identify similar-amount non-sandwich?
-	threshold := f.AmountThreshold
-	if frontTxEntries[0].IncomeToken != utils.SOL {
-		threshold = threshold / 2 // Tighten the threshold for non-SOL token pairs
+	// Sandwich from A to B and back to A
+	tokenA := frontTxEntries[0].IncomeToken
+	if tokenA == "" || tokenA != backTxEntries[0].ExpenseToken {
+		return false
 	}
+	tokenB := frontTxEntries[0].ExpenseToken
+	if tokenB == "" || tokenB != backTxEntries[0].IncomeToken {
+		return false
+	}
+	// Signer
 	frontSigner := frontTxEntries[0].Signer
 	backSigner := backTxEntries[0].Signer
+
+	// Check pool condition
+	maxPoolsCnt := 1
 	if frontSigner != backSigner {
-		threshold = 2
+		maxPoolsCnt += 1
+	}
+	for _, fe := range frontTxEntries {
+		ftx := f.Txs[fe.TxIdx]
+		if ftx.RelatedPools.Cardinality() > maxPoolsCnt {
+			return false // Front tx interacts with too many pools
+		}
+	}
+	for _, be := range backTxEntries {
+		btx := f.Txs[be.TxIdx]
+		if btx.RelatedPools.Cardinality() > maxPoolsCnt {
+			return false // Back tx interacts with too many pools
+		}
 	}
 
+	// Threshold is a percentage, e.g., 5 means 5%, allowed difference in total amount
+	threshold := f.AmountThreshold
 	// For a pool in frontTx(s), A is incomeToken, B is expenseTokens; in backTx(s), B is incomeToken, A is expenseToken
 	// Check the amount condition: B in front and back have valid and similar trading amounts (within threshold)
 	var frontAmtB float64
 	for _, fe := range frontTxEntries {
+		// tokenB is frontTx.ExpenseToken
 		if fe.ExpenseAmt < 0 {
 			frontAmtB += -fe.ExpenseAmt
 		}
 	}
 	var backAmtB float64
 	for _, be := range backTxEntries {
+		// tokenB is backTx.IncomeToken
 		if be.IncomeAmt > 0 {
 			backAmtB += be.IncomeAmt
 		}
 	}
+
+	// if f.Txs[frontTxEntries[0].TxIdx].Signature == "6ZTDa1tbT22vsAcXoURNy58BzSiRv8oo6ewGxdA2M8WXUyr4swkGR54LfTiUz77EMwv7sLUT7KAgj5UM7ro8tWn" {
+	// 	fmt.Printf("Debug: amounts of specific frontTx/backTx: frontAmtB=%.10f, backAmtB=%.10f\n", frontAmtB, backAmtB)
+	// }
+
 	// Check backAmtB <= frontAmtB
-	if backAmtB > frontAmtB {
+	if backAmtB-frontAmtB > utils.EPSILON {
 		return false // Back amount B cannot be greater than front amount B
 	}
 	// Check amount similarity
-	similar, relativeAmtDiff := f.HasSimilarAmount(frontAmtB, backAmtB, threshold)
+	similar, relativeAmtDiff := f.HasSimilarAmount(frontAmtB, backAmtB, float64(threshold))
 	if !similar {
 		return false // Amount not similar enough
 	}
-	perfect := (relativeAmtDiff <= 0.001) // Perfect if relative difference ~= 0
+	// Perfect if relative difference = 0 if tokenB is SPL token,
+	// or relative difference ~= 0 if tokenB is SOL (to tolerate some rent/exchange fee)
+	var perfect bool
+	if tokenB == utils.SOL {
+		perfect = relativeAmtDiff <= 0.01 // 1% tolerance for SOL
+	} else {
+		perfect = relativeAmtDiff == 0.0
+	}
 
 	// Check victim txs between front and back
 	victimEntries := f.collectVictimEntries(frontTxEntries, backTxEntries)
@@ -238,9 +293,49 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 		return false // No victim txs found
 	}
 
+	// If signers of frontTxs and backTxs are the same, it is confirmed right now
+	if frontSigner != backSigner {
+		// Different signers, cannot be confirmed right now
+		// We check if
+		// in lastFrontTx, the post-balance of tokenB of the attackers, is similar to
+		// in firstBackTx, the pre-balance of tokenB of the attackers
+		postBalanceBInFrtTxs := map[string]float64{}
+		for _, frtTxEntry := range frontTxEntries {
+			frtTx := f.Txs[frtTxEntry.TxIdx]
+			for owner, bc := range frtTx.OwnerBalanceChanges {
+				if bc[tokenB].TotalAmount > 0 {
+					// This owner may be the attacker
+					postBalanceBInFrtTxs[owner] = frtTx.OwnerPostBalances[owner][tokenB]
+				}
+			}
+		}
+		preBalanceBInBckTxs := map[string]float64{}
+		for _, bckTxEntry := range backTxEntries {
+			bckTx := f.Txs[bckTxEntry.TxIdx]
+			for owner, bc := range bckTx.OwnerBalanceChanges {
+				if bc[tokenB].TotalAmount < 0 {
+					// This owner may be the attacker
+					preBalanceBInBckTxs[owner] = bckTx.OwnerPreBalances[owner][tokenB]
+				}
+			}
+		}
+		var atkPostBalanceAfterFrtRun float64
+		for _, pB := range postBalanceBInFrtTxs {
+			atkPostBalanceAfterFrtRun += pB
+		}
+		var atkPreBalanceBeforeBckRun float64
+		for _, pB := range preBalanceBInBckTxs {
+			atkPreBalanceBeforeBckRun += pB
+		}
+		// Check if the balance is similar
+		if !(math.Abs(atkPostBalanceAfterFrtRun-atkPreBalanceBeforeBckRun) < utils.EPSILON) {
+			return false // Attacker's balance of tokenB not similar enough before backTx(s) and after frontTx(s)
+		}
+	}
+
 	// All conditions met, record the sandwich
-	f.lastTokenA = frontTxEntries[0].IncomeToken
-	f.lastTokenB = frontTxEntries[0].ExpenseToken
+	f.lastTokenA = tokenA
+	f.lastTokenB = tokenB
 	f.lastFrontTxEntries = frontTxEntries
 	f.lastBackTxEntries = backTxEntries
 	f.lastVictimEntries = victimEntries
@@ -248,7 +343,6 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 	f.relativeAmtDiffB = relativeAmtDiff
 	f.FrontToTotalAmount = frontAmtB
 	f.BackFromTotalAmount = backAmtB
-
 	var frontAmtA float64
 	for _, fe := range frontTxEntries {
 		if fe.IncomeAmt > 0 {
@@ -291,7 +385,7 @@ func (f *InBlockSandwichFinder) collectVictimEntries(frontTxEntries, backTxEntri
 	victims := make([]PoolEntry, 0)
 	for _, e := range frontTxBucket {
 		if f.Txs[e.TxIdx] == nil || f.Txs[e.TxIdx].IsFailed || f.Txs[e.TxIdx].IsVote {
-			// Note that we do not skip already confirmed sadnwich tx here, because we assume a victim tx may be used in multiple sandwiches
+			// Note that we do not skip already confirmed sandwich tx here, because we assume a victim tx may be used in multiple sandwiches
 			continue // Skip failed or vote transactions
 		}
 		// Must be between front and back
@@ -313,7 +407,7 @@ func (f *InBlockSandwichFinder) collectVictimEntries(frontTxEntries, backTxEntri
 
 // HasSimilarAmount checks if two amounts are similar within the configured threshold
 // Amount check: |\sum{|frontTx.B_Out|} - \sum{|backTx.B_In|}| / max(\sum{|frontTx.B_Out|}, \sum{|backTx.B_In|}) <= threshold
-func (f *InBlockSandwichFinder) HasSimilarAmount(frontAmt, backAmt float64, threshold uint) (bool, float64) {
+func (f *InBlockSandwichFinder) HasSimilarAmount(frontAmt, backAmt float64, threshold float64) (bool, float64) {
 	if frontAmt <= 0 || backAmt <= 0 {
 		return false, -1.0
 	}
@@ -323,7 +417,7 @@ func (f *InBlockSandwichFinder) HasSimilarAmount(frontAmt, backAmt float64, thre
 		return false, -1.0
 	}
 
-	return relativeDiff <= float64(threshold)/100.0, relativeDiff
+	return relativeDiff <= threshold/100.0, relativeDiff
 }
 
 func (f *InBlockSandwichFinder) GetAmountRelativeDifference(frontAmt, backAmt float64) float64 {
@@ -369,9 +463,21 @@ func (f *InBlockSandwichFinder) RecordSandwich() {
 	}
 
 	// Signer
-	frontSigner := f.lastFrontTxEntries[0].Signer
-	backSigner := f.lastBackTxEntries[0].Signer
+	lastFrontTx := f.Txs[f.lastFrontTxEntries[len(f.lastFrontTxEntries)-1].TxIdx]
+	firstBackTx := f.Txs[f.lastBackTxEntries[0].TxIdx]
+	frontSigner := lastFrontTx.Signer
+	backSigner := firstBackTx.Signer
 	signerSame := (frontSigner == backSigner)
+	// Owner
+	frontOwners := MapSet.NewSet[string]()
+	backOwners := MapSet.NewSet[string]()
+	for _, frtSTx := range frontTxs {
+		frontOwners.Append(frtSTx.OwnersOfB...)
+	}
+	for _, bckSTx := range backTxs {
+		backOwners.Append(bckSTx.OwnersOfB...)
+	}
+	ownerSame := frontOwners.IsSuperset(backOwners) // If all back owners are in front owners, consider owner same (front owners may contain fee recipients)
 
 	// Slot and timestamp
 	slot := f.Txs[f.lastFrontTxEntries[0].TxIdx].Slot
@@ -392,7 +498,7 @@ func (f *InBlockSandwichFinder) RecordSandwich() {
 			VictimConsecutive: isEntriesConsecutive(f.lastVictimEntries, false),
 			// Signer/owner/ata info
 			SignerSame: signerSame,
-			OwnerSame:  false, // TODO:
+			OwnerSame:  ownerSame,
 			ATASame:    false, // TODO:
 			// Amount info
 			Perfect:       f.perfect,
@@ -431,23 +537,44 @@ func (f *InBlockSandwichFinder) RecordSandwich() {
 // makeSandwichTx makes a SandwichTx from a PoolEntry and kind ("frontRun", "victim", "backRun")
 func (f *InBlockSandwichFinder) makeSandwichTx(sandwichId string, entry PoolEntry, kind string) *types.SandwichTx {
 	orig := f.Txs[entry.TxIdx]
-	var stx *types.SandwichTx
+	stx := &types.SandwichTx{
+		SandwichID:  sandwichId,
+		Transaction: *orig,
+		SandwichTxTokenInfo: types.SandwichTxTokenInfo{
+			FromToken:            entry.IncomeToken,
+			ToToken:              entry.ExpenseToken,
+			FromAmount:           math.Abs(entry.IncomeAmt),
+			ToAmount:             math.Abs(entry.ExpenseAmt),
+			OwnersOfB:            []string{},
+			AttackerPreBalanceB:  0.0,
+			AttackerPostBalanceB: 0.0,
+		},
+		InBundle: false, // default false
+		Type:     kind,  // "frontRun" / "backRun" / "victim"
+	}
 	switch kind {
-	case "frontRun", "victim", "backRun":
-		stx = &types.SandwichTx{
-			SandwichID:  sandwichId,
-			Transaction: *orig,
-			SandwichTxTokenInfo: types.SandwichTxTokenInfo{
-				FromToken:  entry.IncomeToken,
-				ToToken:    entry.ExpenseToken,
-				FromAmount: math.Abs(entry.IncomeAmt),
-				ToAmount:   math.Abs(entry.ExpenseAmt),
-			},
-			InBundle: false, // default false
-			Type:     kind,  // "frontRun" / "backRun" / "victim"
+	case "frontRun":
+		for owner, bc := range orig.OwnerBalanceChanges {
+			if bc[f.lastTokenB].TotalAmount > 0 {
+				// This owner may be the attacker
+				stx.SandwichTxTokenInfo.OwnersOfB = append(stx.SandwichTxTokenInfo.OwnersOfB, owner)
+				stx.SandwichTxTokenInfo.AttackerPreBalanceB += orig.OwnerPreBalances[owner][f.lastTokenB]
+				stx.SandwichTxTokenInfo.AttackerPostBalanceB += orig.OwnerPostBalances[owner][f.lastTokenB]
+			}
 		}
+	case "backRun":
+		for owner, bc := range orig.OwnerBalanceChanges {
+			if bc[f.lastTokenB].TotalAmount < 0 {
+				// This owner may be the attacker
+				stx.SandwichTxTokenInfo.OwnersOfB = append(stx.SandwichTxTokenInfo.OwnersOfB, owner)
+				stx.SandwichTxTokenInfo.AttackerPreBalanceB += orig.OwnerPreBalances[owner][f.lastTokenB]
+				stx.SandwichTxTokenInfo.AttackerPostBalanceB += orig.OwnerPostBalances[owner][f.lastTokenB]
+			}
+		}
+	case "victim":
+		// Nothing special for victim
 	default:
-		return nil
+		// Unknown kind, do nothing
 	}
 
 	return stx

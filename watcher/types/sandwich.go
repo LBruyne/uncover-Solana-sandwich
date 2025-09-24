@@ -14,8 +14,11 @@ type SandwichTxTokenInfo struct {
 	FromTotalAmount float64 `ch:"fromTotalAmount"` // Only last front-run or back-run tx in a multi-front or multi-back sandwich has the total amount
 	ToTotalAmount   float64 `ch:"toTotalAmount"`   // Only last front-run or back-run tx in a multi-front or multi-back sandwich has the total amount
 
-	DiffA float64 `ch:"diffA"` // backTx.ToTotal - frontTx.FromTotal
-	DiffB float64 `ch:"diffB"` // frontTx.ToTotal - backTx.FromTotal
+	DiffA                float64  `ch:"diffA"`                // backTx.ToTotal - frontTx.FromTotal
+	DiffB                float64  `ch:"diffB"`                // frontTx.ToTotal - backTx.FromTotal
+	AttackerPostBalanceB float64  `ch:"attackerPostBalanceB"` // Attacker's tokenB balance after tx
+	AttackerPreBalanceB  float64  `ch:"attackerPreBalanceB"`  // Attacker's tokenB balance before tx
+	OwnersOfB            []string `ch:"ownersOfB"`            // Possible attacker owners, i.e., owners of ATAs that hold tokenB in front-run and back-run
 }
 
 type SandwichTx struct {
@@ -72,11 +75,8 @@ type CrossBlockSandwich struct {
 func ppSandwichTxs(kind string, txs []*SandwichTx) {
 	fmt.Printf("  %s (%d):\n", kind, len(txs))
 	for i, stx := range txs {
-		pos := stx.Position
-		sig := stx.Signature
-		signer := stx.Signer
 		ti := stx.SandwichTxTokenInfo
-		fmt.Printf("    [%d] pos=%d signer=%s sig=%s\n", i, pos, signer, sig)
+		PPTx(i+1, &stx.Transaction, true)
 		fmt.Printf("         from=%s amt=%.9f  to=%s amt=%.9f\n",
 			ti.FromToken, ti.FromAmount, ti.ToToken, ti.ToAmount)
 
@@ -87,10 +87,16 @@ func ppSandwichTxs(kind string, txs []*SandwichTx) {
 				fmt.Printf("         totals: fromTotal=%.9f  toTotal=%.9f\n",
 					ti.FromTotalAmount, ti.ToTotalAmount)
 			}
+			fmt.Printf("         attackerPostBalanceB=%.9f  attackerPreBalanceB=%.9f ownersOfB=%v\n",
+				ti.AttackerPostBalanceB, ti.AttackerPreBalanceB, ti.OwnersOfB)
 		case "BackRun":
 			if i == len(txs)-1 { // only last back-run tx has total amount
 				fmt.Printf("         totals: fromTotal=%.9f  toTotal=%.9f  diffA=%.9f  diffB=%.9f\n", ti.FromTotalAmount, ti.ToTotalAmount, ti.DiffA, ti.DiffB)
 			}
+			fmt.Printf("         attackerPostBalanceB=%.9f  attackerPreBalanceB=%.9f ownersOfB=%v\n",
+				ti.AttackerPostBalanceB, ti.AttackerPreBalanceB, ti.OwnersOfB)
+		case "Victims":
+			// No extra info for victims
 		}
 	}
 }

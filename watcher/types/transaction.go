@@ -23,6 +23,7 @@ type Transaction struct {
 	Slot      uint64    `json:"slot" ch:"slot"`
 	Position  int       `json:"position" ch:"position"` // The position of this transaction in the block
 	Timestamp time.Time `json:"timestamp" ch:"timestamp"`
+	Fee       uint64    `json:"fee" ch:"fee"` // The fee paid by the signer to process this transaction, in lamports (1 SOL = 10^9 lamports)
 	IsFailed  bool
 	IsVote    bool
 
@@ -42,6 +43,7 @@ type Transaction struct {
 	// A pool is a Solana address that has exact 1 income token and 1 expense token throughout a tx, excluding the signer itself, e.g., WSOL/TESLA pool
 	OwnerBalanceChanges map[string]map[string]AtaAmounts `ch:"ownerBalanceChanges" json:"ownerBalanceChanges"` // owner -> token/SOL -> []{ata, delta}, record the balance changes of each owner for each token/SOL in this transaction.
 	OwnerPreBalances    map[string]map[string]float64    `ch:"ownerPreBalances" json:"ownerPreBalances"`       // owner -> token/SOL -> pre balance, record the pre-transaction balance of each owner for each token/SOL in this transaction.
+	OwnerPostBalances   map[string]map[string]float64    `ch:"ownerPostBalances" json:"ownerPostBalances"`     // owner -> token/SOL -> post balance, record the post-transaction balance of each owner for each token/SOL in this transaction.
 	AtaOwner            map[string]string                `ch:"ataOwner" json:"ataOwner"`                       // ata -> owner address, record the owner of each ATA involved in this transaction
 	RelatedTokens       MapSet.Set[string]               `ch:"relatedTokens" json:"relatedTokens"`             // records all tokens involved in this transaction
 	RelatedPools        MapSet.Set[string]               `ch:"relatedPools" json:"relatedPools"`               // records all pools involved in this transaction
@@ -64,16 +66,23 @@ func (tx *Transaction) PostprocessForFindSandwich() {
 	// Other tokens like jitoSOL, bSOL shold not be combined
 	for owner, tokenChanges := range tx.OwnerBalanceChanges {
 		solChanges, hasSOL := tokenChanges[utils.SOL]
+		if solChanges.Amounts == nil {
+			solChanges = NewAtaAmounts()
+		}
 		wsolChanges, hasWSOL := tokenChanges[utils.WSOL]
+		if wsolChanges.Amounts == nil {
+			wsolChanges = NewAtaAmounts()
+		}
 		if !hasWSOL {
 			continue
 		}
 
 		if hasSOL {
 			// Add all WSOL changes to SOL changes
-			for i := range wsolChanges.AtaAddress {
-				solChanges.AddAtaAmount(wsolChanges.AtaAddress[i], wsolChanges.Amount[i])
+			for ata, amt := range wsolChanges.Amounts {
+				solChanges.AddAtaAmount(ata, amt)
 			}
+			// Replace WSOL with SOL
 			tokenChanges[utils.SOL] = solChanges
 			delete(tokenChanges, utils.WSOL)
 		} else {
@@ -98,6 +107,22 @@ func (tx *Transaction) PostprocessForFindSandwich() {
 			delete(preBalances, utils.WSOL)
 		}
 		tx.OwnerPreBalances[owner] = preBalances
+	}
+	for owner, postBalances := range tx.OwnerPostBalances {
+		solPostBalance, hasSOL := postBalances[utils.SOL]
+		wsolPostBalance, hasWSOL := postBalances[utils.WSOL]
+		if !hasWSOL {
+			continue
+		}
+
+		if hasSOL {
+			postBalances[utils.SOL] = solPostBalance + wsolPostBalance
+			delete(postBalances, utils.WSOL)
+		} else {
+			postBalances[utils.SOL] = wsolPostBalance
+			delete(postBalances, utils.WSOL)
+		}
+		tx.OwnerPostBalances[owner] = postBalances
 	}
 
 	// Useful things for sandwich detection
@@ -153,22 +178,28 @@ type PoolAmount struct {
 
 // AtaAmounts represents pairs of ATA addresses and their corresponding amounts for a specific token.
 type AtaAmounts struct {
-	AtaAddress  []string
-	Amount      []float64
+	Amounts     map[string]float64 // ata address -> amount
 	TotalAmount float64
 }
 
 func NewAtaAmounts() AtaAmounts {
 	return AtaAmounts{
-		AtaAddress:  make([]string, 0),
-		Amount:      make([]float64, 0),
+		Amounts:     make(map[string]float64),
 		TotalAmount: 0,
 	}
 }
 
 func (p *AtaAmounts) AddAtaAmount(ata string, amount float64) {
-	p.AtaAddress = append(p.AtaAddress, ata)
-	p.Amount = append(p.Amount, amount)
+	// If ata already exists, just update the amount
+	for a, v := range p.Amounts {
+		if strings.EqualFold(a, ata) {
+			p.Amounts[ata] = v + amount
+			p.TotalAmount += amount
+			return
+		}
+	}
+	// New ata, add to the list
+	p.Amounts[ata] = amount
 	p.TotalAmount += amount
 }
 
@@ -177,7 +208,7 @@ func (p *AtaAmounts) GetTotalAmount() float64 {
 }
 
 // Pretty Print block and its transactions
-func PPBlock(b *Block, txLimit int) {
+func PPBlock(b *Block, txLimit int, txDetails bool) {
 	if b == nil {
 		return
 	}
@@ -194,23 +225,22 @@ func PPBlock(b *Block, txLimit int) {
 		n = txLimit
 	}
 	for i := 0; i < n; i++ {
-		PPTx(i, b.Txs[i])
+		PPTx(i, b.Txs[i], txDetails)
 	}
 	fmt.Println()
 }
 
 // Pretty Print a transaction
-func PPTx(i int, tx *Transaction) {
+func PPTx(i int, tx *Transaction, details bool) {
 	if tx == nil {
 		return
 	}
-	fmt.Printf("  -- Tx[%d] pos=%d sig=%s signer=%s\n",
-		i, tx.Position, shorten(tx.Signature, 8), shorten(tx.Signer, 8))
+	fmt.Printf("  -- Tx[%d] pos=%d fee=%d sig=%s signer=%s\n",
+		i, tx.Position, tx.Fee, tx.Signature, shorten(tx.Signer, 8))
 	fmt.Printf("     flags: failed=%v vote=%v  programs=%d  accountKeys=%d\n",
 		tx.IsFailed, tx.IsVote, len(tx.Programs), len(tx.AccountKeys))
 
 	// Related tokens
-	// if !tx.RelatedTokens.IsEmpty()
 	tokens := tx.RelatedTokens.ToSlice()
 	if len(tokens) > 0 {
 		fmt.Printf("     relatedTokens: %s\n", strings.Join(tokens, ", "))
@@ -223,7 +253,7 @@ func PPTx(i int, tx *Transaction) {
 		for _, p := range pools {
 			if pa, ok := tx.RelatedPoolsInfo[p]; ok {
 				dir := fmt.Sprintf("%s -> %s", pa.IncomeToken, pa.ExpenseToken)
-				fmt.Printf("       - %s  dir=%s  income=%.9f  expense=%.9f\n",
+				fmt.Printf("       - %s  dir=%s  income=%.12f  expense=%.12f\n",
 					p, dir, pa.IncomeAmt, pa.ExpenseAmt)
 			} else {
 				fmt.Printf("       - %s\n", p)
@@ -231,19 +261,22 @@ func PPTx(i int, tx *Transaction) {
 		}
 	}
 
-	// Owner balance changes
+	if !details {
+		return
+	}
+
+	// Owner pre/post and delta balance changes
 	if len(tx.OwnerBalanceChanges) > 0 {
 		fmt.Printf("     ownerBalanceChanges:\n")
 		for owner, tokenMap := range tx.OwnerBalanceChanges {
 			parts := make([]string, 0, len(tokenMap))
-			for token, aa := range tokenMap {
-				if aa.TotalAmount == 0 {
-					continue
-				}
-				parts = append(parts, fmt.Sprintf("%s: %.9f", token, aa.TotalAmount))
+			for token, ataAmounts := range tokenMap {
+				preb := tx.OwnerPreBalances[owner][token]
+				postb := tx.OwnerPostBalances[owner][token]
+				parts = append(parts, fmt.Sprintf("%s: pre=%.12f post=%.12f delta=%.12f", token, preb, postb, ataAmounts.GetTotalAmount()))
 			}
 			if len(parts) > 0 {
-				fmt.Printf("       - %s  [%s]\n", shorten(owner, 12), strings.Join(parts, ", "))
+				fmt.Printf("       - %s: %s\n", shorten(owner, 12), strings.Join(parts, "; "))
 			}
 		}
 	}

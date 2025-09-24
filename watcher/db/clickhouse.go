@@ -151,6 +151,7 @@ func (d *ClickhouseDB) CreateTables() error {
 			slot UInt64,
 			position Int32,
 			timestamp DateTime,
+			fee UInt64,
 			signature String,
 			signer String,
 			inBundle Bool,
@@ -166,7 +167,10 @@ func (d *ClickhouseDB) CreateTables() error {
 			toTotalAmount Float64,
 
 			diffA Float64,
-			diffB Float64
+			diffB Float64,
+			attackerPreBalanceB Float64,  
+			attackerPostBalanceB Float64,
+    		ownersOfB Array(String)
 		)
 		ENGINE = MergeTree
 		ORDER BY (slot, timestamp)

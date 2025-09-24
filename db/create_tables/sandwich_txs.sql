@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS solwich.sandwich_txs
     `slot` UInt64,
     `position` Int32,
     `timestamp` DateTime,
+    `fee` UInt64,
     `signature` String,
     `signer` String,
     `inBundle` Bool,
@@ -16,6 +17,9 @@ CREATE TABLE IF NOT EXISTS solwich.sandwich_txs
     `toToken` String,
     `fromAmount` Float64,
     `toAmount` Float64,
+    `attackerPreBalanceB` Float64,  -- Attacker's tokenB balance before tx
+    `attackerPostBalanceB` Float64, -- Attacker's tokenB balance after tx
+    `ownersOfB` Array(String), -- Possible attacker owners, i.e., owners of ATAs that hold tokenB in front-run and back-run
 
     -- Only the last front-run or back-run tx in a multi-front or multi-back sandwich has the total amount
     `fromTotalAmount` Float64,

@@ -245,7 +245,7 @@ func GetBlock(slot uint64) (*types.Block, error) {
 		return nil, fmt.Errorf(utils.SKIPPED_BLOCK)
 	}
 
-	parseBlkTime := time.Now()
+	// parseBlkTime := time.Now()
 	obj, ok := raw.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("parse block failed, unexpected getBlock result type: %T", raw)
@@ -323,7 +323,7 @@ func GetBlock(slot uint64) (*types.Block, error) {
 			b.ValidTxCount++
 		}
 	}
-	logger.SolLogger.Info("Parsed block cost", "slot", slot, "num_txs", len(b.Txs), "num_valid_txs", b.ValidTxCount, "parse_time", time.Since(parseBlkTime).String())
+	// logger.SolLogger.Info("Parsed block cost", "slot", slot, "num_txs", len(b.Txs), "num_valid_txs", b.ValidTxCount, "parse_time", time.Since(parseBlkTime).String())
 	return b, nil
 }
 
@@ -347,6 +347,12 @@ func parseTransactionFromBase64(txData map[string]any) (*types.Transaction, erro
 		return nil, fmt.Errorf("decode transaction failed: %w", err)
 	}
 
+	// Transaction fee
+	fee, ok := meta["fee"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid fee field: %T", meta["fee"])
+	}
+	feeLamport := uint64(fee)
 	// Transaction Id/signature, always the first signature
 	signature := tx.Signatures[0].String()
 	// Basic keys/signers
@@ -368,7 +374,7 @@ func parseTransactionFromBase64(txData map[string]any) (*types.Transaction, erro
 	isVote := (len(programs) == 1 && programs[0] == utils.VOTE_PROGRAM)
 
 	// Parse meta data to get Balance changes & ATA owners
-	ownerBalanceChanges, ownerPreBalances, ataOwner, err := parseBalancesDelta(meta, accountKeys)
+	ownerBalanceChanges, ownerPreBalances, ownerPostBalances, ataOwner, err := parseBalancesDelta(meta, accountKeys)
 	if err != nil {
 		return nil, fmt.Errorf("parseTransactionMetaData failed: %w", err)
 	}
@@ -378,12 +384,14 @@ func parseTransactionFromBase64(txData map[string]any) (*types.Transaction, erro
 		// Inside
 		IsFailed:            isFailed,
 		IsVote:              isVote,
+		Fee:                 feeLamport,
 		Signature:           signature,
 		AccountKeys:         accountKeys,
 		Signer:              signer,
 		Programs:            programs,
 		OwnerBalanceChanges: ownerBalanceChanges,
 		OwnerPreBalances:    ownerPreBalances,
+		OwnerPostBalances:   ownerPostBalances,
 		AtaOwner:            ataOwner,
 	}, nil
 }
@@ -407,26 +415,26 @@ Balances example:
 
 ]
 */
-func parseBalancesDelta(meta map[string]any, accountKeys []string) (map[string]map[string]types.AtaAmounts, map[string]map[string]float64, map[string]string, error) {
+func parseBalancesDelta(meta map[string]any, accountKeys []string) (map[string]map[string]types.AtaAmounts, map[string]map[string]float64, map[string]map[string]float64, map[string]string, error) {
 	if meta == nil {
-		return nil, nil, nil, fmt.Errorf("nil meta")
+		return nil, nil, nil, nil, fmt.Errorf("nil meta")
 	}
 	// Read balances
 	postBalances, ok := meta["postBalances"].([]interface{})
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("invalid postBalances")
+		return nil, nil, nil, nil, fmt.Errorf("invalid postBalances")
 	}
 	postTokenBalances, ok := meta["postTokenBalances"].([]interface{})
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("invalid postTokenBalances")
+		return nil, nil, nil, nil, fmt.Errorf("invalid postTokenBalances")
 	}
 	preBalances, ok := meta["preBalances"].([]interface{})
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("invalid preBalances")
+		return nil, nil, nil, nil, fmt.Errorf("invalid preBalances")
 	}
 	preTokenBalances, ok := meta["preTokenBalances"].([]interface{})
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("invalid preTokenBalances")
+		return nil, nil, nil, nil, fmt.Errorf("invalid preTokenBalances")
 	}
 	// Read loaded addresses (writable + readonly)
 	loaded := meta["loadedAddresses"].(map[string]any)
@@ -443,21 +451,22 @@ func parseBalancesDelta(meta map[string]any, accountKeys []string) (map[string]m
 		if s, ok := v.(string); ok {
 			accounts = append(accounts, s)
 		} else {
-			return nil, nil, nil, fmt.Errorf("unexpected loaded writable account type: %T", v)
+			return nil, nil, nil, nil, fmt.Errorf("unexpected loaded writable account type: %T", v)
 		}
 	}
 	for _, v := range ro {
 		if s, ok := v.(string); ok {
 			accounts = append(accounts, s)
 		} else {
-			return nil, nil, nil, fmt.Errorf("unexpected loaded readonly account type: %T", v)
+			return nil, nil, nil, nil, fmt.Errorf("unexpected loaded readonly account type: %T", v)
 		}
 	}
 
 	ownerBalanceChanges := make(map[string]map[string]types.AtaAmounts)
 	ownerPreBalances := make(map[string]map[string]float64)
+	ownerPostBalances := make(map[string]map[string]float64)
 	// SOL balance deltas
-	for i, acc := range accounts {
+	for i, acnt := range accounts {
 		if i >= len(preBalances) || i >= len(postBalances) {
 			continue
 		}
@@ -470,25 +479,27 @@ func parseBalancesDelta(meta map[string]any, accountKeys []string) (map[string]m
 			continue
 		}
 
-		owner := acc
+		owner := acnt
 		if _, ok := ownerBalanceChanges[owner]; !ok {
 			ownerBalanceChanges[owner] = make(map[string]types.AtaAmounts)
 		}
-		ownerBalanceChanges[owner][utils.SOL] = types.AtaAmounts{
-			AtaAddress:  []string{acc},
-			Amount:      []float64{deltaSOL},
-			TotalAmount: deltaSOL,
-		}
+		ataAmts := types.NewAtaAmounts()
+		ataAmts.AddAtaAmount(acnt, deltaSOL)
+		ownerBalanceChanges[owner][utils.SOL] = ataAmts
+
 		if _, ok := ownerPreBalances[owner]; !ok {
 			ownerPreBalances[owner] = make(map[string]float64)
 		}
+		if _, ok := ownerPostBalances[owner]; !ok {
+			ownerPostBalances[owner] = make(map[string]float64)
+		}
 		ownerPreBalances[owner][utils.SOL] += float64(preb) / utils.SOL_UNIT
+		ownerPostBalances[owner][utils.SOL] += float64(postb) / utils.SOL_UNIT
 	}
 
 	ataOwner := make(map[string]string)
 	// SPL token balance deltas
-	// Pre balances
-	ataPreBalances := make(map[string]map[string]float64) // ata -> token -> amount
+	// Pre token balances
 	for _, tokenBalance := range preTokenBalances {
 		tokenBalance, ok := tokenBalance.(map[string]any)
 		if !ok {
@@ -500,18 +511,37 @@ func parseBalancesDelta(meta map[string]any, accountKeys []string) (map[string]m
 		}
 		ataAddr := accounts[ataIdx]
 		tokenAddr, _ := tokenBalance["mint"].(string)
+		owner := tokenBalance["owner"].(string)
+		if owner == "" {
+			owner = ataAddr // fallback to self if owner missing
+		}
 		uiTokenAmount, _ := tokenBalance["uiTokenAmount"].(map[string]any)
 		amount, _ := uiTokenAmount["amount"].(string)
+		decimals := int(uiTokenAmount["decimals"].(float64))
 		amountInt, _ := strconv.Atoi(amount)
-		preb := float64(amountInt)
-		// Use ataBalancePre to (temporarily) record pre balance for this ata-token
-		if _, ok := ataPreBalances[ataAddr]; !ok {
-			ataPreBalances[ataAddr] = make(map[string]float64)
+		preb := float64(amountInt) / math.Pow10(decimals)
+
+		// Record ATA owner
+		ataOwner[ataAddr] = owner
+		// Record owner balance change
+		if _, ok := ownerBalanceChanges[owner]; !ok {
+			ownerBalanceChanges[owner] = make(map[string]types.AtaAmounts)
+			ownerBalanceChanges[owner][tokenAddr] = types.NewAtaAmounts()
 		}
-		ataPreBalances[ataAddr][tokenAddr] = float64(preb)
+		bc := ownerBalanceChanges[owner][tokenAddr]
+		if bc.Amounts == nil {
+			bc.Amounts = make(map[string]float64)
+		}
+		bc.AddAtaAmount(ataAddr, -preb)
+		ownerBalanceChanges[owner][tokenAddr] = bc
+
+		if _, ok := ownerPreBalances[owner]; !ok {
+			ownerPreBalances[owner] = make(map[string]float64)
+		}
+		ownerPreBalances[owner][tokenAddr] += preb
 	}
 
-	// Post balances
+	// Post token balances
 	for _, tokenBalance := range postTokenBalances {
 		tokenBalance, ok := tokenBalance.(map[string]any)
 		if !ok {
@@ -522,44 +552,38 @@ func parseBalancesDelta(meta map[string]any, accountKeys []string) (map[string]m
 			continue
 		}
 		ataAddr := accounts[ataIdx]
-		tokenAddr := tokenBalance["mint"].(string)
+		tokenAddr, _ := tokenBalance["mint"].(string)
 		owner := tokenBalance["owner"].(string)
+		if owner == "" {
+			owner = ataAddr // fallback to self if owner missing
+		}
 		uiTokenAmount := tokenBalance["uiTokenAmount"].(map[string]any)
 		amount, _ := uiTokenAmount["amount"].(string)
 		decimals := int(uiTokenAmount["decimals"].(float64))
 		amountInt, _ := strconv.Atoi(amount)
-		postb := float64(amountInt)
+		postb := float64(amountInt) / math.Pow10(decimals)
 
 		// Record ATA owner
-		if owner == "" {
-			owner = ataAddr // fallback to self if owner missing
-		}
 		ataOwner[ataAddr] = owner
 		// Record owner balance change
-		preb := ataPreBalances[ataAddr][tokenAddr]
-		delta := float64(postb-preb) / math.Pow10(decimals)
-		if delta == 0 {
-			continue
-		}
-
 		if _, ok := ownerBalanceChanges[owner]; !ok {
 			ownerBalanceChanges[owner] = make(map[string]types.AtaAmounts)
-			ownerBalanceChanges[owner][tokenAddr] = types.AtaAmounts{
-				AtaAddress:  []string{},
-				Amount:      []float64{},
-				TotalAmount: 0,
-			}
+			ownerBalanceChanges[owner][tokenAddr] = types.NewAtaAmounts()
 		}
 		bc := ownerBalanceChanges[owner][tokenAddr]
-		bc.AddAtaAmount(ataAddr, delta)
-		ownerBalanceChanges[owner][tokenAddr] = bc
-		if _, ok := ownerPreBalances[owner]; !ok {
-			ownerPreBalances[owner] = make(map[string]float64)
+		if bc.Amounts == nil {
+			bc.Amounts = make(map[string]float64)
 		}
-		ownerPreBalances[owner][tokenAddr] += float64(preb) / math.Pow10(decimals)
+		bc.AddAtaAmount(ataAddr, postb)
+		ownerBalanceChanges[owner][tokenAddr] = bc
+
+		if _, ok := ownerPostBalances[owner]; !ok {
+			ownerPostBalances[owner] = make(map[string]float64)
+		}
+		ownerPostBalances[owner][tokenAddr] += postb
 	}
 
-	return ownerBalanceChanges, ownerPreBalances, ataOwner, nil
+	return ownerBalanceChanges, ownerPreBalances, ownerPostBalances, ataOwner, nil
 }
 
 // parseTransaction parses a single transaction item from `getBlock` when encoding is JSON (not base64).

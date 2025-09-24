@@ -26,13 +26,15 @@ echo "Watcher built successfully."
 # sleep 5
 # nohup ./watcher jito -s 355000000 -t --disable-task2 &
 # sleep 5
-nohup ./watcher jito -s 360000000 -t --disable-task2 &
+# nohup ./watcher jito -s 367000000 -t --disable-task2 &
 
 # Sync and scan for sandwich_txs in bundles 
-# nohup ./watcher jito -s 367000000 -t &
-
-# Sync slot_leaders
-# nohup ./watcher leader -s 367400000 -t &
+nohup ./watcher jito -s 368700000 -t --disable-task1 &
 
 # Sync blocks and search for sandwiches
 # ./watcher sandwich -s 366797880 &
+
+# Sync slot_leaders
+# nohup ./watcher leader -s 360000000 -t &
+
+
