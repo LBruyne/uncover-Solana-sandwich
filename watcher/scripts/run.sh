@@ -29,7 +29,7 @@ echo "Watcher built successfully."
 # nohup ./watcher jito -s 367000000 -t --disable-task2 &
 
 # Sync and scan for sandwich_txs in bundles 
-nohup ./watcher jito -s 368700000 -t --disable-task1 &
+# nohup ./watcher jito -s 368700000 -t --disable-task1 &
 
 # Sync blocks and search for sandwiches
 # ./watcher sandwich -s 366797880 &

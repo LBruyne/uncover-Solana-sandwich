@@ -56,4 +56,6 @@ const (
 	SANDWICH_AMOUNT_THRESHOLD = uint(10) // relative threshold between front-run/back-run
 	SANDWICH_BACKRUN_MAX_GAP  = 10       // How long can two back-run txs be apart
 	SANDWICH_FRONTRUN_MAX_GAP = 10       // How long can two front-run txs be apart
+
+	SOL_TOLERANCE = 0.1
 )

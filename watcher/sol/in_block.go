@@ -75,7 +75,7 @@ func (f *InBlockSandwichFinder) Find() {
 				continue // No valid front-run tx found
 			}
 
-			// if f.Txs[frontTxEntries[0].TxIdx].Signature == "6ZTDa1tbT22vsAcXoURNy58BzSiRv8oo6ewGxdA2M8WXUyr4swkGR54LfTiUz77EMwv7sLUT7KAgj5UM7ro8tWn" {
+			// if f.Txs[frontTxEntries[0].TxIdx].Signature == "3ry7r5naR3cB2pPr4GG6XxjUgpjwvAfqQ1C6rG7WSJHe5cNUjbMc3bC3DbV24N8tsqtcB1J9Zqv7HsFNDwUS9j59" {
 			// 	fmt.Printf("Debug: found specific frontTx: %+v\n", frontTxEntries)
 			// }
 
@@ -270,10 +270,7 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 	// }
 
 	// Check backAmtB <= frontAmtB
-	if backAmtB-frontAmtB > utils.EPSILON {
-		return false // Back amount B cannot be greater than front amount B
-	}
-	// Check amount similarity
+	// Check amount similarity: |\sum{|frontTx.B_Out|} - \sum{|backTx.B_In|}| / max(\sum{|frontTx.B_Out|}, \sum{|backTx.B_In|}) <= threshold
 	similar, relativeAmtDiff := f.HasSimilarAmount(frontAmtB, backAmtB, float64(threshold))
 	if !similar {
 		return false // Amount not similar enough
@@ -282,7 +279,7 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 	// or relative difference ~= 0 if tokenB is SOL (to tolerate some rent/exchange fee)
 	var perfect bool
 	if tokenB == utils.SOL {
-		perfect = relativeAmtDiff <= 0.01 // 1% tolerance for SOL
+		perfect = relativeAmtDiff <= config.SOL_TOLERANCE // tolerance for SOL
 	} else {
 		perfect = relativeAmtDiff == 0.0
 	}
@@ -328,7 +325,12 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 			atkPreBalanceBeforeBckRun += pB
 		}
 		// Check if the balance is similar
-		if !(math.Abs(atkPostBalanceAfterFrtRun-atkPreBalanceBeforeBckRun) < utils.EPSILON) {
+		threshold := utils.EPSILON
+		if tokenB == utils.SOL {
+			threshold = config.SOL_TOLERANCE // 1% tolerance for SOL due to rent/exchange fee
+		}
+		similar, _ = f.HasSimilarAmount(atkPostBalanceAfterFrtRun, atkPreBalanceBeforeBckRun, threshold)
+		if !similar {
 			return false // Attacker's balance of tokenB not similar enough before backTx(s) and after frontTx(s)
 		}
 	}
@@ -406,7 +408,7 @@ func (f *InBlockSandwichFinder) collectVictimEntries(frontTxEntries, backTxEntri
 }
 
 // HasSimilarAmount checks if two amounts are similar within the configured threshold
-// Amount check: |\sum{|frontTx.B_Out|} - \sum{|backTx.B_In|}| / max(\sum{|frontTx.B_Out|}, \sum{|backTx.B_In|}) <= threshold
+// Amount check: |A-B| / max(A,B) <= threshold
 func (f *InBlockSandwichFinder) HasSimilarAmount(frontAmt, backAmt float64, threshold float64) (bool, float64) {
 	if frontAmt <= 0 || backAmt <= 0 {
 		return false, -1.0
