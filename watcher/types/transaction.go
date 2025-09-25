@@ -28,8 +28,8 @@ type Transaction struct {
 	IsVote    bool
 
 	Signature   string   `json:"signature" ch:"signature"`     // The identifier of this transaction, which is the first signature in Signatures field. A 64 bytes Ed25519 signature, encoded as a base-58 string.
-	Signer      string   `json:"signer" ch:"signer"`           // The account address that signed the transaction and paid the fee, which is thte first account in the AccountKeys array.
-	AccountKeys []string `json:"accountKeys" ch:"accountKeys"` // All accounts that signed the transaction and paid the fee
+	Signer      string   `json:"signer" ch:"signer"`           // The account address that signed the transaction and paid the fee
+	AccountKeys []string `json:"accountKeys" ch:"accountKeys"` // All accounts accessed in this transaction
 	Programs    []string `json:"programs" ch:"programs"`       // All programs invoked in this transaction
 
 	// Account-balance related information

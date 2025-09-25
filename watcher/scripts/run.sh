@@ -9,7 +9,7 @@ echo "Watcher built successfully."
 # Kill any specific componets of watcher if needed 
 # pkill -f "watcher jito"
 # pkill -f "watcher leader" 
-# pkill -f "watcher sandwich"
+pkill -f "watcher sandwich"
 
 # Reset the db if needed. DO NOT RUN WITHOUT DISCUSSION
 # echo "Resetting the database..."
@@ -22,19 +22,28 @@ echo "Watcher built successfully."
 # Sync only for jito bundles
 # -t for disable output to console
 # -s for starting slot
-# nohup ./watcher jito -s 350000000 -t --disable-task2 &
-# sleep 5
-# nohup ./watcher jito -s 355000000 -t --disable-task2 &
+# nohup ./watcher jito -s 362000000 -t --disable-task2 &
 # sleep 5
 # nohup ./watcher jito -s 367000000 -t --disable-task2 &
+# sleep 5
 
 # Sync and scan for sandwich_txs in bundles 
 # nohup ./watcher jito -s 368700000 -t --disable-task1 &
+# sleep 5
 
 # Sync blocks and search for sandwiches
-# ./watcher sandwich -s 366797880 &
+nohup ./watcher sandwich -s 368700000 &
 
 # Sync slot_leaders
 # nohup ./watcher leader -s 360000000 -t &
+# sleep 5
 
-
+# Lookup logs 
+# head -10 ./logs/watcher_20250918_095118_jito_jito.log
+# tail -10 ./logs/watcher_20250918_095118_jito_jito.log
+# head -10 ./logs/watcher_20250918_080119_jito_jito.log
+# tail -10 ./logs/watcher_20250918_080119_jito_jito.log
+# head -10 ./logs/watcher_20250924_073440_jito_jito.log
+# tail -10 ./logs/watcher_20250924_073440_jito_jito.log
+# head -10 ./logs/watcher_20250924_073420_sandwich_sol.log
+# tail -10 ./logs/watcher_20250924_073420_sandwich_sol.log

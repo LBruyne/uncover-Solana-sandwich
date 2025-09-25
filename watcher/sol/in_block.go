@@ -269,7 +269,10 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 	// 	fmt.Printf("Debug: amounts of specific frontTx/backTx: frontAmtB=%.10f, backAmtB=%.10f\n", frontAmtB, backAmtB)
 	// }
 
-	// Check backAmtB <= frontAmtB
+	// Check frontAmtB > backAmtB, using FloatRound to avoid precision issue
+	if tokenB != utils.SOL && utils.FloatRound(frontAmtB, 3) < utils.FloatRound(backAmtB, 3) {
+		return false // Invalid trading amount
+	}
 	// Check amount similarity: |\sum{|frontTx.B_Out|} - \sum{|backTx.B_In|}| / max(\sum{|frontTx.B_Out|}, \sum{|backTx.B_In|}) <= threshold
 	similar, relativeAmtDiff := f.HasSimilarAmount(frontAmtB, backAmtB, float64(threshold))
 	if !similar {
@@ -279,7 +282,7 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 	// or relative difference ~= 0 if tokenB is SOL (to tolerate some rent/exchange fee)
 	var perfect bool
 	if tokenB == utils.SOL {
-		perfect = relativeAmtDiff <= config.SOL_TOLERANCE // tolerance for SOL
+		perfect = relativeAmtDiff <= (config.SANDWICH_AMOUNT_SOL_TOLERANCE / 100) // tolerance for SOL
 	} else {
 		perfect = relativeAmtDiff == 0.0
 	}
@@ -327,7 +330,7 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 		// Check if the balance is similar
 		threshold := utils.EPSILON
 		if tokenB == utils.SOL {
-			threshold = config.SOL_TOLERANCE // 1% tolerance for SOL due to rent/exchange fee
+			threshold = config.SANDWICH_AMOUNT_SOL_TOLERANCE // 1% tolerance for SOL due to rent/exchange fee
 		}
 		similar, _ = f.HasSimilarAmount(atkPostBalanceAfterFrtRun, atkPreBalanceBeforeBckRun, threshold)
 		if !similar {
@@ -357,7 +360,8 @@ func (f *InBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEntri
 			backAmtA += -be.ExpenseAmt
 		}
 	}
-	f.profitA = backAmtA - frontAmtA
+	var estimateBackAmtA = frontAmtB * backAmtA / backAmtB // Estimate backAmtA based on frontAmtB and backAmtB, in case backAmtB != frontAmtB
+	f.profitA = estimateBackAmtA - frontAmtA
 	f.FrontFromTotalAmount = frontAmtA
 	f.BackToTotalAmount = backAmtA
 	return true
@@ -417,6 +421,10 @@ func (f *InBlockSandwichFinder) HasSimilarAmount(frontAmt, backAmt float64, thre
 	relativeDiff := f.GetAmountRelativeDifference(frontAmt, backAmt)
 	if relativeDiff < 0 {
 		return false, -1.0
+	}
+
+	if relativeDiff <= 1e-6 {
+		return true, 0.0 // Consider as exactly the same
 	}
 
 	return relativeDiff <= threshold/100.0, relativeDiff

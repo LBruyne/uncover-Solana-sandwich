@@ -55,6 +55,7 @@ func RunJitoCmd(startSlot uint64, runTask1 bool, runTask2 bool) error {
 						continue
 					}
 					solS = cur
+					time.Sleep(config.JITO_CHECK_SANDWICH_INTERVAL)
 				}
 				if s > solS {
 					logger.JitoLogger.Info("Reached current slot, sleep and retry", "slot", s, "current", solS)
@@ -97,7 +98,7 @@ func RunJitoCmd(startSlot uint64, runTask1 bool, runTask2 bool) error {
 				// Update slot_bundle status
 				status := types.SlotBundlesStatus{
 					Slot:          s,
-					BundleFetched: true,
+					BundleFetched: false,
 					BundleCount:   uint64(len(validBundles)),
 					BundleTxCount: txCount,
 				}

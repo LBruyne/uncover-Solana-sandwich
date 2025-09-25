@@ -360,8 +360,12 @@ func parseTransactionFromBase64(txData map[string]any) (*types.Transaction, erro
 	for _, k := range tx.Message.AccountKeys {
 		accountKeys = append(accountKeys, k.String())
 	}
-	// Signer is always the first account key
-	signer := accountKeys[0]
+	// Multiple signers
+	signer := make([]string, 0, tx.Message.Signers().Len())
+	for _, s := range tx.Message.Signers() {
+		signer = append(signer, s.String())
+	}
+
 	// Programs list
 	programs := make([]string, len(tx.Message.Instructions))
 	for i, inst := range tx.Message.Instructions {
@@ -387,7 +391,7 @@ func parseTransactionFromBase64(txData map[string]any) (*types.Transaction, erro
 		Fee:                 feeLamport,
 		Signature:           signature,
 		AccountKeys:         accountKeys,
-		Signer:              signer,
+		Signer:              signer[0], // first signer as main signer
 		Programs:            programs,
 		OwnerBalanceChanges: ownerBalanceChanges,
 		OwnerPreBalances:    ownerPreBalances,
