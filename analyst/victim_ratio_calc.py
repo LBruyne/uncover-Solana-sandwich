@@ -6,7 +6,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 def load_env():
-    load_dotenv()
+    load_dotenv(dotenv_path=".old.env")
     return {
         "host": os.getenv("CLICKHOUSE_HOST"),
         "port": int(os.getenv("CLICKHOUSE_PORT")),
@@ -19,10 +19,10 @@ config = load_env()
 
 # Initialize ClickHouse client
 client = clickhouse_connect.get_client(
-    host=config["host"],
-    port=config["port"],
-    username=config["username"],
-    password=config["password"]
+    host='209.192.245.26',
+    port=8123,
+    username='sol',
+    password='sol'
 )
 
 solana_rpc_url = "https://api.mainnet-beta.solana.com"

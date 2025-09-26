@@ -4,6 +4,7 @@
 *.csv
 
 .env
+.old.env
 
 *.sql
 !db/create_tables/**.sql
