@@ -16,3 +16,5 @@
 **/go.sum
 
 watcher/watcher
+watcher/test.py
+watcher/test.sql

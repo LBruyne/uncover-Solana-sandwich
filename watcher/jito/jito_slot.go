@@ -98,7 +98,7 @@ func RunJitoCmd(startSlot uint64, runTask1 bool, runTask2 bool) error {
 				// Update slot_bundle status
 				status := types.SlotBundlesStatus{
 					Slot:          s,
-					BundleFetched: false,
+					BundleFetched: len(validBundles) > 0,
 					BundleCount:   uint64(len(validBundles)),
 					BundleTxCount: txCount,
 				}

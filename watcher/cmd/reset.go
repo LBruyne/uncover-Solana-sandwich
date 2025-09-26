@@ -20,6 +20,5 @@ var resetCmd = cobra.Command{
 			logger.GlobalLogger.Error("Failed to drop tables", "err", err)
 		}
 		logger.GlobalLogger.Info("Done.")
-
 	},
 }

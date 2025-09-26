@@ -9,7 +9,7 @@ echo "Watcher built successfully."
 # Kill any specific componets of watcher if needed 
 # pkill -f "watcher jito"
 # pkill -f "watcher leader" 
-pkill -f "watcher sandwich"
+# pkill -f "watcher sandwich"
 
 # Reset the db if needed. DO NOT RUN WITHOUT DISCUSSION
 # echo "Resetting the database..."
@@ -24,7 +24,7 @@ pkill -f "watcher sandwich"
 # -s for starting slot
 # nohup ./watcher jito -s 362000000 -t --disable-task2 &
 # sleep 5
-# nohup ./watcher jito -s 367000000 -t --disable-task2 &
+# nohup ./watcher jito -s 369130000 -t --disable-task2 &
 # sleep 5
 
 # Sync and scan for sandwich_txs in bundles 
@@ -32,7 +32,7 @@ pkill -f "watcher sandwich"
 # sleep 5
 
 # Sync blocks and search for sandwiches
-nohup ./watcher sandwich -s 368700000 &
+# nohup ./watcher sandwich -s 368700000 &
 
 # Sync slot_leaders
 # nohup ./watcher leader -s 360000000 -t &
