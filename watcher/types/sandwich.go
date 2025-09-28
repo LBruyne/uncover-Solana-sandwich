@@ -69,6 +69,8 @@ type InBlockSandwich struct {
 
 type CrossBlockSandwich struct {
 	Sandwich
+	Slot      uint64    `ch:"slot" json:"slot"`
+	Timestamp time.Time `ch:"timestamp" json:"timestamp"`
 }
 
 // Pretty print sandwich txs

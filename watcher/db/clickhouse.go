@@ -387,6 +387,22 @@ func (d *ClickhouseDB) InsertInBlockSandwiches(rows []*types.InBlockSandwich) er
 	return batch.Send()
 }
 
+func (d *ClickhouseDB) InsertCrossBlockSandwiches(rows []*types.CrossBlockSandwich) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := d.conn.PrepareBatch(context.Background(), "INSERT INTO solwich.sandwiches")
+	if err != nil {
+		return fmt.Errorf("failed to prepare batch: %w", err)
+	}
+	for _, s := range rows {
+		if err := batch.AppendStruct(s); err != nil {
+			return fmt.Errorf("failed to append struct: %w", err)
+		}
+	}
+	return batch.Send()
+}
+
 func (d *ClickhouseDB) InsertSandwichTxs(sandwichTxs []*types.SandwichTx) error {
 	if len(sandwichTxs) == 0 {
 		return nil

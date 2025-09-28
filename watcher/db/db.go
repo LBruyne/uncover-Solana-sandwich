@@ -32,6 +32,7 @@ type Database interface {
 
 	// sandwiches
 	InsertInBlockSandwiches(rows []*types.InBlockSandwich) error
+	InsertCrossBlockSandwiches(rows []*types.CrossBlockSandwich) error
 
 	// sandwich_txs
 	InsertSandwichTxs(sandwichTxs []*types.SandwichTx) error

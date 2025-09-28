@@ -12,6 +12,7 @@ import (
 )
 
 var ch db.Database
+var cache = NewBlockCache(4)
 
 func RunSandwichCmd(startSlot uint64) error {
 	ch = db.NewClickhouse()
@@ -181,7 +182,111 @@ func FindInBlockSandwiches(b *types.Block) []*types.InBlockSandwich {
 }
 
 func ProcessCrossBlockSandwich(blocks types.Blocks) []*types.CrossBlockSandwich {
-	return nil
+	if len(blocks) == 0 {
+		return make([]*types.CrossBlockSandwich, 0)
+	}
+
+	logger.SolLogger.Info("[ProcessCrossBlockSandwich] Processing slot [%d]", blocks[0].Slot)
+
+	allBlocks := append(cache.AllBlocks(), blocks...)
+	if len(allBlocks) == 0 {
+		return nil
+	}
+
+	sort.Slice(allBlocks, func(i, j int) bool {
+		return allBlocks[i].Slot < allBlocks[j].Slot
+	})
+
+	groups := make([]types.Blocks, 0)
+	var current types.Blocks
+	var prevLeader string
+
+	for i, b := range allBlocks {
+		leader, _ := getSlotLeader(b.Slot)
+
+		if i == 0 {
+			current = append(current, b)
+			prevLeader = leader
+			continue
+		}
+
+		if leader == prevLeader {
+			current = append(current, b)
+		} else {
+			groups = append(groups, current)
+			current = []*types.Block{b}
+			prevLeader = leader
+		}
+	}
+	if len(current) > 0 {
+		groups = append(groups, current)
+	}
+
+	lastGroup := groups[len(groups)-1]
+	for _, b := range lastGroup {
+		cache.Put(b)
+	}
+
+	parallel := config.SOL_PROCESS_CROSS_BLOCK_SANDWICH_PARALLEL_NUM // 并发数，可以从 config 取
+	groupQueue := make(chan types.Blocks, len(groups))
+	sandwichesCh := make(chan []*types.CrossBlockSandwich)
+
+	var processWg sync.WaitGroup
+
+	go func() {
+		for _, g := range groups[:len(groups)-1] {
+			groupQueue <- g
+		}
+		close(groupQueue)
+	}()
+
+	processWg.Add(parallel)
+	for i := 0; i < parallel; i++ {
+		go func() {
+			defer processWg.Done()
+			for g := range groupQueue {
+				found := FindCrossBlockSandwiches(g) // 👈 传整个组
+				if len(found) > 0 {
+					sandwichesCh <- found
+				}
+			}
+		}()
+	}
+
+	go func() {
+		processWg.Wait()
+		close(sandwichesCh)
+	}()
+
+	result := make([]*types.CrossBlockSandwich, 0)
+	for s := range sandwichesCh {
+		result = append(result, s...)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Slot != result[j].Slot {
+			return result[i].Slot < result[j].Slot
+		}
+		return result[i].Timestamp.Before(result[j].Timestamp)
+	})
+
+	return result
+}
+
+func FindCrossBlockSandwiches(blocks types.Blocks) []*types.CrossBlockSandwich {
+	finder := NewCrossBlockSandwichFinder(blocks, config.SANDWICH_AMOUNT_THRESHOLD)
+
+	finder.Find()
+	return finder.Sandwiches
+}
+
+func getSlotLeader(slot uint64) (string, error) {
+	leaders, err := GetSlotLeaders(slot, 1)
+	if err != nil {
+		return "", fmt.Errorf("GetSlotLeader failed: %w", err)
+	}
+	leader := leaders[0].Leader
+	return leader, nil
 }
 
 func StoreSandwichesToDB(ch db.Database, inBlockSandwiches []*types.InBlockSandwich, crossBlockSandwiches []*types.CrossBlockSandwich) error {
@@ -204,8 +309,21 @@ func StoreSandwichesToDB(ch db.Database, inBlockSandwiches []*types.InBlockSandw
 	}
 
 	if len(crossBlockSandwiches) > 0 {
-		// TODO: implement cross-block sandwich storage
-		logger.SolLogger.Info("Cross-block sandwich storage not implemented yet", "num", len(crossBlockSandwiches))
+		if err := ch.InsertCrossBlockSandwiches(crossBlockSandwiches); err != nil {
+			return fmt.Errorf("failed to insert cross-block sandwiches to DB: %w", err)
+		}
+		logger.SolLogger.Info("Inserted cross-block sandwiches to DB", "num", len(crossBlockSandwiches))
+
+		sandwichTxToInsert := make([]*types.SandwichTx, 0)
+		for _, s := range crossBlockSandwiches {
+			sandwichTxToInsert = append(sandwichTxToInsert, s.FrontRun...)
+			sandwichTxToInsert = append(sandwichTxToInsert, s.Victims...)
+			sandwichTxToInsert = append(sandwichTxToInsert, s.BackRun...)
+		}
+		if err := ch.InsertSandwichTxs(sandwichTxToInsert); err != nil {
+			return fmt.Errorf("failed to insert cross-block sandwich txs to DB: %w", err)
+		}
+		logger.SolLogger.Info("Inserted cross-block sandwich txs to DB", "num", len(sandwichTxToInsert))
 	}
 
 	return nil
