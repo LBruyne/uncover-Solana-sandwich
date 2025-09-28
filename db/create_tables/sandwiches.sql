@@ -1,0 +1,32 @@
+CREATE TABLE IF NOT EXISTS solwich.sandwiches
+(
+    `sandwichId` String,     -- Hash of frontTx.signature + backTx.signature
+    `crossBlock` Bool,
+    `slot` UInt64,           
+    `timestamp` DateTime, 
+
+    `tokenA` String,
+    `tokenB` String,
+
+    `signerSame` Bool,
+    `ownerSame` Bool,
+    `ataSame` Bool,
+    `consecutive` Bool,
+
+    `multiFrontRun` Bool,
+    `multiBackRun` Bool,
+    `multiVictim` Bool,
+    `frontCount` UInt16,
+    `backCount` UInt16,
+    `victimCount` UInt16
+    `frontConsecutive` Bool,
+    `backConsecutive` Bool,
+    `victimConsecutive` Bool,
+
+    `perfect` Bool,
+    `relativeDiffB` Float64,
+    `profitA` Float64
+)
+ENGINE = MergeTree
+ORDER BY (slot, timestamp, sandwichId)
+SETTINGS index_granularity = 8192;
