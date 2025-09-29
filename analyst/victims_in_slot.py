@@ -60,7 +60,7 @@ def query_current_slots_in_DB(start_slot=0, end_slot=500000000):
     SELECT
         min(slot) AS min_slot,
         max(slot) AS max_slot,
-        count() AS total_slots
+        countDistinct(slot) AS total_slots
     FROM solwich.slot_txs
     WHERE slot BETWEEN {start_slot} AND {end_slot} AND txFetched = true
     """
@@ -113,19 +113,19 @@ def query_leader_slot_counts(start_slot: int, end_slot: int) -> pd.DataFrame:
              .reset_index(drop=True)
     return out
 
-def query_victim_count_by_slot(start_slot: int, end_slot: int) -> pd.DataFrame:
+def query_sandwiches_by_slot(start_slot: int, end_slot: int) -> pd.DataFrame:
     """
-    Count victims per validator in the given slot range.
+    Count sandwiches data per validator in the given slot range.
     """
     query = f'''
     SELECT
         l.leader,
-        count() AS sandwich_count,               
+        countDistinct(s.sandwichId) AS sandwich_count,               
         sum(s.victimCount) AS total_victim_count,      
         sumIf(s.profitA, s.tokenA = 'SOL') AS total_SOL_profit
     FROM solwich.sandwiches AS s
     INNER JOIN solwich.slot_leaders AS l ON s.slot = l.slot
-    WHERE s.slot BETWEEN {start_slot} AND {end_slot} AND s.tokenA = 'SOL' AND s.signerSame = true AND s.ownerSame = true
+    WHERE s.slot BETWEEN {start_slot} AND {end_slot} AND s.tokenA = 'SOL' AND s.ownerSame = true AND s.crossBlock = false
     GROUP BY l.leader
     ORDER BY total_victim_count DESC
     '''
@@ -137,24 +137,43 @@ def query_victim_count_by_slot(start_slot: int, end_slot: int) -> pd.DataFrame:
 
 if __name__ == "__main__":
     min_slot, max_slot, total_slots = query_current_slots_in_DB()
-    print(f"Current slots in DB: min_slot = {min_slot}, max_slot = {max_slot}, total_slots = {total_slots}")
+    print(f"Current checked slots in DB: min_slot = {min_slot}, max_slot = {max_slot}, total_slots = {total_slots}")
     
     # Step 1: Fetch last epoch info
     prev_epoch, prev_epoch_start, prev_epoch_end = fetch_prev_epoch_info()
     print(f"Previous epoch: {prev_epoch}, Start slot: {prev_epoch_start}, End slot: {prev_epoch_end}")
     
     min_slot, max_slot, total_slots = query_current_slots_in_DB(prev_epoch_start, prev_epoch_end)
-    print(f"Current slots in DB in previous epoch range: min_slot = {min_slot}, max_slot = {max_slot}, total_slots = {total_slots}")
+    print(f"Current checked slots in DB in previous epoch range: min_slot = {min_slot}, max_slot = {max_slot}, total_slots = {total_slots}")
     
     # Step 2: Query victim, slot counts in the previous epoch
-    victims = query_victim_count_by_slot(prev_epoch_start, prev_epoch_end)
+    sandwiches = query_sandwiches_by_slot(prev_epoch_start, prev_epoch_end)
     print(f"Victim counts in epoch {prev_epoch} (slots {prev_epoch_start} to {prev_epoch_end}):")
-    print(victims.head(10))
-    print("Total sandwiches:", victims['sandwich_count'].sum())
-    print("Total profit in SOL:", victims['total_SOL_profit'].sum())
-    print("Total victims:", victims['total_victim_count'].sum())
+    print(sandwiches.head(10))
+    print("Total sandwiches:", sandwiches['sandwich_count'].sum())
+    print("Total profit in SOL:", sandwiches['total_SOL_profit'].sum())
+    print("Total victims:", sandwiches['total_victim_count'].sum())
         
     slots = query_leader_slot_counts(prev_epoch_start, prev_epoch_end)
     print(f"Total slots led in epoch {prev_epoch} (slots {prev_epoch_start} to {prev_epoch_end}):")
     print(slots.head(10))
-    print("Total slots:", slots['slot_count'].sum(), "Total actual slots with sandwiches:", slots['actual_slot_count'].sum())
+    print("Total slots:", slots['slot_count'].sum(), "Total actual slots checked:", slots['actual_slot_count'].sum())
+
+    # Compute slot ratio (victims / total slots led)
+    slots['victim_slot_ratio'] = sandwiches['total_victim_count'] / slots['actual_slot_count']
+    slots['sandwich_slot_ratio'] = sandwiches['sandwich_count'] / slots['actual_slot_count']
+    # Compute weighted victim count (slot led / total slots * victims)
+    slots['weighted_victim_count'] = (slots['actual_slot_count'] / slots['actual_slot_count'].sum()) * sandwiches['total_victim_count']
+    slots['weighted_sandwich_count'] = (slots['actual_slot_count'] / slots['actual_slot_count'].sum()) * sandwiches['sandwich_count']
+    slots = slots.fillna(0)
+    slots = slots.sort_values(by='sandwich_slot_ratio', ascending=False).reset_index(drop=True)
+    # Merge
+    slots = slots.merge(sandwiches[['validator_account', 'sandwich_count', 'total_victim_count', 'total_SOL_profit']], on="validator_account", how="left")
+    print(f"In epoch {prev_epoch} (slots {prev_epoch_start} to {prev_epoch_end}):")
+    print(slots.head(10))
+
+    # Export to Excel
+    timestamp = datetime.now().strftime("%Y_%m_%d_%H-%M")
+    filename = f"epoch_validator_stats_new_{timestamp}.csv"
+    slots.to_csv(filename, index=False)
+    print(f"CSV file saved: {filename}")

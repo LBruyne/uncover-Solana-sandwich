@@ -68,6 +68,19 @@ def get_validator_info_from_clickhouse(epoch: int) -> pd.DataFrame:
     result = client.query(query)
     return pd.DataFrame(result.result_rows, columns=result.column_names)
 
+def query_slot_counts(start_slot: int, end_slot: int) -> pd.DataFrame:
+    """
+    Count total number of slots led by each validator in the given range.
+    """
+    query = f'''
+    SELECT leader AS validator_account, COUNT(*) AS slot_sum
+    FROM solwich.slot_leaders
+    WHERE slot BETWEEN {start_slot} AND {end_slot}
+    GROUP BY leader
+    '''
+    result = client.query(query)
+    return pd.DataFrame(result.result_rows, columns=result.column_names)
+
 def query_victim_counts(start_slot: int, end_slot: int) -> pd.DataFrame:
     """
     Count backrun attacks per validator in the given slot range.
@@ -85,19 +98,6 @@ def query_victim_counts(start_slot: int, end_slot: int) -> pd.DataFrame:
     df = pd.DataFrame(result.result_rows, columns=result.column_names)
     df.rename(columns={"leader": "validator_account"}, inplace=True)
     return df
-
-def query_slot_counts(start_slot: int, end_slot: int) -> pd.DataFrame:
-    """
-    Count total number of slots led by each validator in the given range.
-    """
-    query = f'''
-    SELECT leader AS validator_account, COUNT(*) AS slot_sum
-    FROM solwich.slot_leaders
-    WHERE slot BETWEEN {start_slot} AND {end_slot}
-    GROUP BY leader
-    '''
-    result = client.query(query)
-    return pd.DataFrame(result.result_rows, columns=result.column_names)
 
 def query_total_victim_counts(start_slot: int, end_slot: int) -> pd.DataFrame:
     """
