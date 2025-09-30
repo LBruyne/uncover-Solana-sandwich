@@ -137,9 +137,9 @@ if __name__ == "__main__":
     final_df["commission"] = final_df["commission"].round(2)
     final_df["total_stake"] = final_df["total_stake"].round(2)
 
-    # Compute weighted victim count (stake-weighted)
-    total_stake = final_df["total_stake"].sum()
-    final_df["weighted_victim_count"] = ((final_df["total_stake"] / total_stake) * final_df["victim_count"]).round(4)
+    # # Compute weighted victim count (stake-weighted)
+    # total_stake = final_df["total_stake"].sum()
+    # final_df["weighted_victim_count"] = ((final_df["total_stake"] / total_stake) * final_df["victim_count"]).round(4)
 
     # Step 5: Query slot leadership counts
     slot_sum_df = query_slot_counts(start_slot, end_slot)

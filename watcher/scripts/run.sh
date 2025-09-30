@@ -7,11 +7,7 @@ echo "Watcher built successfully."
 # Check if any components of watcher is running
 # ps -ef | grep watcher
 # Kill any specific componets of watcher if needed 
-<<<<<<< HEAD
-pkill -f "watcher jito"
-=======
 # pkill -f "watcher jito"
->>>>>>> 4689af9 (update cross-block sandwich detection)
 # pkill -f "watcher leader" 
 # pkill -f "watcher sandwich"
 
@@ -26,28 +22,17 @@ pkill -f "watcher jito"
 # Sync only for jito bundles
 # -t for disable output to console
 # -s for starting slot
-<<<<<<< HEAD
-nohup ./watcher jito -s 362900000 -t --disable-task2 &
-sleep 5
-nohup ./watcher jito -s 369600000 -t --disable-task2 &
-sleep 5
-
-# Sync and scan for sandwich_txs in bundles 
-nohup ./watcher jito -s 369600000 -t --disable-task1 &
-sleep 5
-=======
-# nohup ./watcher jito -s 362000000 -t --disable-task2 &
+# nohup ./watcher jito -s 362900000 -t --disable-task2 &
 # sleep 5
-# nohup ./watcher jito -s 369130000 -t --disable-task2 &
+# nohup ./watcher jito -s 369600000 -t --disable-task2 &
 # sleep 5
 
 # Sync and scan for sandwich_txs in bundles 
-# nohup ./watcher jito -s 368700000 -t --disable-task1 &
+# nohup ./watcher jito -s 369600000 -t --disable-task1 &
 # sleep 5
->>>>>>> 4689af9 (update cross-block sandwich detection)
 
 # Sync blocks and search for sandwiches
-# nohup ./watcher sandwich -s 368700000 &
+nohup ./watcher sandwich -s 368700000 &
 
 # Sync slot_leaders
 # nohup ./watcher leader -s 360000000 -t &

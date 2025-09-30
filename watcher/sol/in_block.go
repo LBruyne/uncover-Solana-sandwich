@@ -427,7 +427,7 @@ func (f *InBlockSandwichFinder) HasSimilarAmount(frontAmt, backAmt float64, thre
 		return true, 0.0 // Consider as exactly the same
 	}
 
-	return relativeDiff <= threshold/100.0, relativeDiff
+	return relativeDiff <= threshold/100.0, utils.FloatRound(relativeDiff, 6)
 }
 
 func (f *InBlockSandwichFinder) GetAmountRelativeDifference(frontAmt, backAmt float64) float64 {

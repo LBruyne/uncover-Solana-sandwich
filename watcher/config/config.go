@@ -10,7 +10,8 @@ const (
 
 // Input config
 const (
-	MIN_START_SLOT = 350000000
+	MIN_START_SLOT  = 350000000
+	PER_LEADER_SLOT = 4 // number of continuous slots per leader
 )
 
 // Network config

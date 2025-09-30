@@ -31,6 +31,12 @@ func RunSandwichCmd(startSlot uint64) error {
 
 	logger.SolLogger.Info("Syncing slot data start from", "start", startSlot)
 	for {
+		if startSlot%config.PER_LEADER_SLOT != 0 {
+			// Move to next slot which is multiple of 4
+			startSlot += 1
+			continue
+		}
+
 		currentSlot, err := GetCurrentSlot()
 		if err != nil {
 			logger.SolLogger.Error("Failed to get current slot", "err", err)

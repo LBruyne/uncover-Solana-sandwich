@@ -291,11 +291,11 @@ func (f *CrossBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEn
 		}
 	}
 
-	// Check backAmtB <= frontAmtB
-	if backAmtB-frontAmtB > utils.EPSILON {
-		return false // Back amount B cannot be greater than front amount B
+	// Check frontAmtB > backAmtB, using FloatRound to avoid precision issue
+	if tokenB != utils.SOL && utils.FloatRound(frontAmtB, 3) < utils.FloatRound(backAmtB, 3) {
+		return false // Invalid trading amount
 	}
-	// Check amount similarity
+	// Check amount similarity: |\sum{|frontTx.B_Out|} - \sum{|backTx.B_In|}| / max(\sum{|frontTx.B_Out|}, \sum{|backTx.B_In|}) <= threshold
 	similar, relativeAmtDiff := f.HasSimilarAmount(frontAmtB, backAmtB, float64(threshold))
 	if !similar {
 		return false // Amount not similar enough
@@ -304,7 +304,7 @@ func (f *CrossBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEn
 	// or relative difference ~= 0 if tokenB is SOL (to tolerate some rent/exchange fee)
 	var perfect bool
 	if tokenB == utils.SOL {
-		perfect = relativeAmtDiff <= 0.01 // 1% tolerance for SOL
+		perfect = relativeAmtDiff <= (config.SANDWICH_AMOUNT_SOL_TOLERANCE / 100)
 	} else {
 		perfect = relativeAmtDiff == 0.0
 	}
@@ -350,41 +350,42 @@ func (f *CrossBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEn
 			atkPreBalanceBeforeBckRun += pB
 		}
 		// Check if the balance is similar
-		if !(math.Abs(atkPostBalanceAfterFrtRun-atkPreBalanceBeforeBckRun) < utils.EPSILON) {
+		threshold := utils.EPSILON
+		if tokenB == utils.SOL {
+			threshold = config.SANDWICH_AMOUNT_SOL_TOLERANCE // 1% tolerance for SOL due to rent/exchange fee
+		}
+		similar, _ = f.HasSimilarAmount(atkPostBalanceAfterFrtRun, atkPreBalanceBeforeBckRun, threshold)
+		if !similar {
 			return false // Attacker's balance of tokenB not similar enough before backTx(s) and after frontTx(s)
 		}
 	}
 
 	// All conditions met, record the sandwich
-	firstSlot := frontTxEntries[0].Slot
-	lastSlot := backTxEntries[len(backTxEntries)-1].Slot
-	if firstSlot != lastSlot {
-		f.lastTokenA = tokenA
-		f.lastTokenB = tokenB
-		f.lastFrontTxEntries = frontTxEntries
-		f.lastBackTxEntries = backTxEntries
-		f.lastVictimEntries = victimEntries
-		f.perfect = perfect
-		f.relativeAmtDiffB = relativeAmtDiff
-		f.FrontToTotalAmount = frontAmtB
-		f.BackFromTotalAmount = backAmtB
-		var frontAmtA float64
-		for _, fe := range frontTxEntries {
-			if fe.IncomeAmt > 0 {
-				frontAmtA += fe.IncomeAmt
-			}
+	f.lastTokenA = tokenA
+	f.lastTokenB = tokenB
+	f.lastFrontTxEntries = frontTxEntries
+	f.lastBackTxEntries = backTxEntries
+	f.lastVictimEntries = victimEntries
+	f.perfect = perfect
+	f.relativeAmtDiffB = relativeAmtDiff
+	f.FrontToTotalAmount = frontAmtB
+	f.BackFromTotalAmount = backAmtB
+	var frontAmtA float64
+	for _, fe := range frontTxEntries {
+		if fe.IncomeAmt > 0 {
+			frontAmtA += fe.IncomeAmt
 		}
-		var backAmtA float64
-		for _, be := range backTxEntries {
-			if be.ExpenseAmt < 0 {
-				backAmtA += -be.ExpenseAmt
-			}
-		}
-		f.profitA = backAmtA - frontAmtA
-		f.FrontFromTotalAmount = frontAmtA
-		f.BackToTotalAmount = backAmtA
 	}
-
+	var backAmtA float64
+	for _, be := range backTxEntries {
+		if be.ExpenseAmt < 0 {
+			backAmtA += -be.ExpenseAmt
+		}
+	}
+	var estimateBackAmtA = frontAmtB * backAmtA / backAmtB
+	f.profitA = estimateBackAmtA - frontAmtA
+	f.FrontFromTotalAmount = frontAmtA
+	f.BackToTotalAmount = backAmtA
 	return true
 }
 
