@@ -235,8 +235,8 @@ func PPTx(i int, tx *Transaction, details bool) {
 	if tx == nil {
 		return
 	}
-	fmt.Printf("  -- Tx[%d] pos=%d fee=%d sig=%s signer=%s\n",
-		i, tx.Position, tx.Fee, tx.Signature, shorten(tx.Signer, 8))
+	fmt.Printf("  -- Tx[%d] slot=%d pos=%d fee=%d sig=%s signer=%s\n",
+		i, tx.Slot, tx.Position, tx.Fee, tx.Signature, shorten(tx.Signer, 8))
 	fmt.Printf("     flags: failed=%v vote=%v  programs=%d  accountKeys=%d\n",
 		tx.IsFailed, tx.IsVote, len(tx.Programs), len(tx.AccountKeys))
 

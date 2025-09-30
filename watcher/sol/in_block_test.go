@@ -9,21 +9,21 @@ import (
 	"watcher/types"
 )
 
-var slot uint64
+var inSlot uint64
 
 func init() {
-	slot = 368858815 // Replace a fresh slot id
+	inSlot = 368858815 // Replace a fresh slot id
 }
 
 func TestFindInBlockSandwichesBySlot(t *testing.T) {
 	tt := time.Now()
-	blk, err := GetBlock(slot)
+	blk, err := GetBlock(inSlot)
 	fmt.Printf("GetBlock time cost: %s\n", time.Since(tt).String())
 	if err != nil {
-		t.Fatalf("GetBlock(%d) error: %v", slot, err)
+		t.Fatalf("GetBlock(%d) error: %v", inSlot, err)
 	}
 	if blk == nil || len(blk.Txs) == 0 {
-		t.Fatalf("empty block or no txs at slot %d", slot)
+		t.Fatalf("empty block or no txs at slot %d", inSlot)
 	}
 
 	// for i, tx := range blk.Txs {
@@ -35,7 +35,7 @@ func TestFindInBlockSandwichesBySlot(t *testing.T) {
 
 	res := FindInBlockSandwiches(blk)
 
-	fmt.Printf("Detected %d in-block sandwiches in slot=%d\n\n", len(res), slot)
+	fmt.Printf("Detected %d in-block sandwiches in slot=%d\n\n", len(res), inSlot)
 	for i, s := range res {
 		types.PPInBlockSandwich(i+1, s)
 	}
@@ -70,7 +70,7 @@ func TestFindInBlockSandwichesBySlot(t *testing.T) {
 
 func TestFindInBlockSandwichesBySlotParallel(t *testing.T) {
 	tt1 := time.Now()
-	blks := GetBlocks(slot, config.SOL_FETCH_SLOT_DATA_SLOT_NUM)
+	blks := GetBlocks(inSlot, config.SOL_FETCH_SLOT_DATA_SLOT_NUM)
 	fmt.Printf("GetBlocks time cost: %s\n", time.Since(tt1).String())
 	if len(blks) == 0 {
 		t.Fatalf("GetBlocks returned no blocks")
@@ -80,7 +80,7 @@ func TestFindInBlockSandwichesBySlotParallel(t *testing.T) {
 	res := ProcessInBlockSandwich(blks)
 	fmt.Printf("ProcessInBlockSandwich time cost: %s\n", time.Since(tt2).String())
 
-	fmt.Printf("Detected %d in-block sandwiches in slot=%d\n\n", len(res), slot)
+	fmt.Printf("Detected %d in-block sandwiches in slot=%d\n\n", len(res), inSlot)
 	for i, s := range res {
 		types.PPInBlockSandwich(i+1, s)
 	}
