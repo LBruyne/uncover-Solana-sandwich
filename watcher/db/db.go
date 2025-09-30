@@ -29,6 +29,7 @@ type Database interface {
 	// slot_leaders
 	InsertSlotLeaders(leaders types.SlotLeaders) error
 	QueryLastSlotLeader() (uint64, error)
+	QuerySlotLeader(slot uint64) (string, error)
 
 	// sandwiches
 	InsertInBlockSandwiches(rows []*types.InBlockSandwich) error

@@ -590,7 +590,7 @@ func (f *InBlockSandwichFinder) makeSandwichTx(sandwichId string, entry PoolEntr
 	return stx
 }
 
-// makeSandwichID makes a unique ID for a sandwich based on the front and back transaction signatures
+// makeSandwichID makes a unique ID for a sandwich based on the front and back transaction signatures, deterministically generated from frontSig and backSig
 func makeSandwichID(frontSig, backSig string) string {
 	h := sha256.Sum256([]byte(frontSig + ":" + backSig))
 	return hex.EncodeToString(h[:])

@@ -371,6 +371,15 @@ func (d *ClickhouseDB) QueryLastSlotLeader() (uint64, error) {
 	return slot, nil
 }
 
+func (d *ClickhouseDB) QuerySlotLeader(slot uint64) (string, error) {
+	row := d.conn.QueryRow(context.Background(), "SELECT leader from solwich.slot_leaders WHERE slot = ?", slot)
+	var leader string
+	if err := row.Scan(&leader); err != nil {
+		return "", fmt.Errorf("failed to query slot leader: %w", err)
+	}
+	return leader, nil
+}
+
 func (d *ClickhouseDB) InsertInBlockSandwiches(rows []*types.InBlockSandwich) error {
 	if len(rows) == 0 {
 		return nil

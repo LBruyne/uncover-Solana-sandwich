@@ -53,13 +53,14 @@ const (
 
 	JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL = 10 * time.Second // interval to mark sandwich txs in bundle
 
-	SANDWICH_AMOUNT_THRESHOLD            = uint(10) // relative threshold between front-run/back-run
+	INBLOCK_SANDWICH_AMOUNT_THRESHOLD    = uint(5) // relative threshold between front-run/back-run
 	CROSSBLOCK_SANDWICH_AMOUNT_THRESHOLD = uint(5)
 	SANDWICH_AMOUNT_SOL_TOLERANCE        = 0.1
 
 	SANDWICH_BACKRUN_MAX_GAP  = 10 // How long can two back-run txs be apart
 	SANDWICH_FRONTRUN_MAX_GAP = 10 // How long can two front-run txs be apart
 
+	CROSS_BLOCK_CACHE_SIZE                        = 32
 	CROSS_BLOCK_SANDWICH_MAX_SLOT_GAP             = 10
 	SOL_PROCESS_CROSS_BLOCK_SANDWICH_PARALLEL_NUM = 8
 	SOL_PROCESS_CROSS_BLOCK_BUCKETS_PARALLEL_NUM  = 8

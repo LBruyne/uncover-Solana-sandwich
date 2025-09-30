@@ -12,7 +12,7 @@ import (
 )
 
 var ch db.Database
-var cache = NewBlockCache(4)
+var crossBlockCache = NewBlockCache(config.CROSS_BLOCK_CACHE_SIZE)
 
 func RunSandwichCmd(startSlot uint64) error {
 	ch = db.NewClickhouse()
@@ -43,7 +43,7 @@ func RunSandwichCmd(startSlot uint64) error {
 		}
 
 		numToFetch := config.SOL_FETCH_SLOT_DATA_SLOT_NUM
-		if currentSlot-startSlot < config.SOL_FETCH_SLOT_DATA_SLOT_NUM {
+		if currentSlot-startSlot < config.SOL_FETCH_SLOT_LEADER_LIMIT {
 			logger.SolLogger.Info("Not enough new slots, sleep and retry after "+config.SOL_FETCH_SLOT_DATA_LONG_INTERVAL.String(), "start", startSlot, "current", currentSlot)
 			time.Sleep(config.SOL_FETCH_SLOT_DATA_LONG_INTERVAL)
 			continue
@@ -172,7 +172,7 @@ func ProcessInBlockSandwich(blocks types.Blocks) []*types.InBlockSandwich {
 func FindInBlockSandwiches(b *types.Block) []*types.InBlockSandwich {
 	finder := &InBlockSandwichFinder{
 		Txs:             b.Txs,
-		AmountThreshold: config.SANDWICH_AMOUNT_THRESHOLD,
+		AmountThreshold: config.INBLOCK_SANDWICH_AMOUNT_THRESHOLD,
 	}
 
 	// timeFind := time.Now()
@@ -186,81 +186,107 @@ func ProcessCrossBlockSandwich(blocks types.Blocks) []*types.CrossBlockSandwich 
 		return make([]*types.CrossBlockSandwich, 0)
 	}
 
-	logger.SolLogger.Info("[ProcessCrossBlockSandwich] Processing slot [%d]", blocks[0].Slot)
-
-	allBlocks := append(cache.AllBlocks(), blocks...)
-	if len(allBlocks) == 0 {
-		return nil
+	for _, b := range blocks {
+		if b != nil {
+			crossBlockCache.Put(b)
+		}
 	}
 
-	sort.Slice(allBlocks, func(i, j int) bool {
-		return allBlocks[i].Slot < allBlocks[j].Slot
+	all := crossBlockCache.AllBlocks()
+	slotToBlock := make(map[uint64]*types.Block, len(all))
+	for _, b := range all {
+		if b != nil {
+			slotToBlock[b.Slot] = b
+		}
+	}
+
+	// Sort all blocks in cache by slot
+	sorted := make(types.Blocks, 0, len(slotToBlock))
+	for _, b := range slotToBlock {
+		sorted = append(sorted, b)
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Slot < sorted[j].Slot
 	})
 
-	groups := make([]types.Blocks, 0)
-	var current types.Blocks
-	var prevLeader string
-
-	for i, b := range allBlocks {
-		leader, _ := getSlotLeader(b.Slot)
-
-		if i == 0 {
-			current = append(current, b)
-			prevLeader = leader
-			continue
-		}
-
-		if leader == prevLeader {
-			current = append(current, b)
-		} else {
-			groups = append(groups, current)
-			current = []*types.Block{b}
-			prevLeader = leader
+	// Record new slots in current batch
+	newSlots := make(map[uint64]struct{}, len(blocks))
+	for _, b := range blocks {
+		if b != nil {
+			newSlots[b.Slot] = struct{}{}
 		}
 	}
-	if len(current) > 0 {
-		groups = append(groups, current)
-	}
 
-	lastGroup := groups[len(groups)-1]
-	for _, b := range lastGroup {
-		cache.Put(b)
-	}
-
-	parallel := config.SOL_PROCESS_CROSS_BLOCK_SANDWICH_PARALLEL_NUM // 并发数，可以从 config 取
-	groupQueue := make(chan types.Blocks, len(groups))
-	sandwichesCh := make(chan []*types.CrossBlockSandwich)
-
-	var processWg sync.WaitGroup
-
-	go func() {
-		for _, g := range groups[:len(groups)-1] {
-			groupQueue <- g
+	getLeader := func(slot uint64) string {
+		l, err := crossBlockCache.GetSlotLeader(slot)
+		if err != nil {
+			logger.SolLogger.Warn("GetSlotLeader failed", "slot", slot, "err", err)
+			return ""
 		}
-		close(groupQueue)
-	}()
+		return l
+	}
 
-	processWg.Add(parallel)
-	for i := 0; i < parallel; i++ {
-		go func() {
-			defer processWg.Done()
-			for g := range groupQueue {
-				found := FindCrossBlockSandwiches(g) // 👈 传整个组
-				if len(found) > 0 {
-					sandwichesCh <- found
+	windows := make([]types.Blocks, 0)
+	if len(sorted) > 0 {
+		runStart := 0
+		for i := 1; i <= len(sorted); i++ {
+			endRun := i == len(sorted)
+			if !endRun {
+				prev, curr := sorted[i-1], sorted[i]
+				// If slots are not continuous or leader changed, end the run
+				if getLeader(prev.Slot) != getLeader(curr.Slot) || curr.Slot != prev.Slot+1 {
+					endRun = true
 				}
 			}
-		}()
+			if !endRun {
+				continue
+			}
+
+			// Process the run [runStart, i)
+			run := sorted[runStart:i] // [runStart, i)
+			runStart = i
+
+			// Skip if no new slots in this run
+			hasNew := false
+			for _, b := range run {
+				if _, ok := newSlots[b.Slot]; ok {
+					hasNew = true
+					break
+				}
+			}
+			if !hasNew {
+				continue
+			}
+
+			// Build window with left 1 and right 1 blocks if exist
+			window := make(types.Blocks, 0, len(run)+2)
+			leftSlot := run[0].Slot - 1
+			if lb, ok := slotToBlock[leftSlot]; ok {
+				window = append(window, lb)
+			}
+			window = append(window, run...)
+			rightSlot := run[len(run)-1].Slot + 1
+			if rb, ok := slotToBlock[rightSlot]; ok {
+				window = append(window, rb)
+			}
+
+			windows = append(windows, window)
+		}
 	}
 
-	go func() {
-		processWg.Wait()
-		close(sandwichesCh)
-	}()
-
 	result := make([]*types.CrossBlockSandwich, 0)
-	for s := range sandwichesCh {
-		result = append(result, s...)
+	resultSandwichIDSet := make(map[string]bool)
+	for _, w := range windows {
+		found := FindCrossBlockSandwiches(w)
+		if len(found) > 0 {
+			// Filter repeated sandwiches according to sandwichID
+			for _, s := range found {
+				if _, ok := resultSandwichIDSet[s.SandwichID]; !ok {
+					result = append(result, s)
+					resultSandwichIDSet[s.SandwichID] = true
+				}
+			}
+		}
 	}
 
 	sort.Slice(result, func(i, j int) bool {
@@ -274,18 +300,17 @@ func ProcessCrossBlockSandwich(blocks types.Blocks) []*types.CrossBlockSandwich 
 }
 
 func FindCrossBlockSandwiches(blocks types.Blocks) []*types.CrossBlockSandwich {
-	finder := NewCrossBlockSandwichFinder(blocks, config.SANDWICH_AMOUNT_THRESHOLD)
+	finder := NewCrossBlockSandwichFinder(blocks, config.INBLOCK_SANDWICH_AMOUNT_THRESHOLD)
 
 	finder.Find()
 	return finder.Sandwiches
 }
 
-func getSlotLeader(slot uint64) (string, error) {
-	leaders, err := GetSlotLeaders(slot, 1)
+func getSlotLeaderFromDB(slot uint64) (string, error) {
+	leader, err := ch.QuerySlotLeader(slot)
 	if err != nil {
-		return "", fmt.Errorf("GetSlotLeader failed: %w", err)
+		return "", fmt.Errorf("QuerySlotLeader failed: %w", err)
 	}
-	leader := leaders[0].Leader
 	return leader, nil
 }
 
@@ -330,30 +355,35 @@ func StoreSandwichesToDB(ch db.Database, inBlockSandwiches []*types.InBlockSandw
 }
 
 func StoreSlotSandwichStatusToDB(ch db.Database, blks types.Blocks, inBlockSandwiches []*types.InBlockSandwich, crossBlockSandwiches []*types.CrossBlockSandwich) error {
+	// DO NOT store sandwich tx count now!
 	// Map slot to number of sandwich txs
-	slotToSandwichTxCount := make(map[uint64]uint64)
-	slotToSandwichCount := make(map[uint64]uint64)
-	slotToSandwichVictimCount := make(map[uint64]uint64)
+	// slotToSandwichTxCount := make(map[uint64]uint64)
+	// slotToSandwichCount := make(map[uint64]uint64)
+	// slotToSandwichVictimCount := make(map[uint64]uint64)
 	// In-block sandwiches
-	for _, s := range inBlockSandwiches {
-		slotToSandwichTxCount[s.Slot] += uint64(len(s.FrontRun) + len(s.BackRun))
-		slotToSandwichCount[s.Slot] += 1
-		slotToSandwichVictimCount[s.Slot] += uint64(len(s.Victims))
-	}
-	// Cross-block sandwiches
-	// TODO: Add cross-block sandwich tx num to corresponding slots
+	// for _, s := range inBlockSandwiches {
+	// 	slotToSandwichTxCount[s.Slot] += uint64(len(s.FrontRun) + len(s.BackRun))
+	// 	slotToSandwichCount[s.Slot] += 1
+	// 	slotToSandwichVictimCount[s.Slot] += uint64(len(s.Victims))
+	// }
+	// // Cross-block sandwiches
+	// for _, s := range crossBlockSandwiches {
+	// 	slotToSandwichTxCount[s.Slot] += uint64(len(s.FrontRun) + len(s.BackRun))
+	// 	slotToSandwichCount[s.Slot] += 1
+	// 	slotToSandwichVictimCount[s.Slot] += uint64(len(s.Victims))
+	// }
 
 	statuses := make([]*types.SlotTxsStatus, 0, len(blks))
 	for _, blk := range blks {
 		statuses = append(statuses, &types.SlotTxsStatus{
-			Slot:                    blk.Slot,
-			TxFetched:               true,
-			TxCount:                 uint64(len(blk.Txs)),
-			ValidTxCount:            blk.ValidTxCount,
-			SandwichFetched:         true,
-			SandwichTxCount:         slotToSandwichTxCount[blk.Slot],
-			SandwichCount:           slotToSandwichCount[blk.Slot],
-			SandwichVictimCount:     slotToSandwichVictimCount[blk.Slot],
+			Slot:            blk.Slot,
+			TxFetched:       true,
+			TxCount:         uint64(len(blk.Txs)),
+			ValidTxCount:    blk.ValidTxCount,
+			SandwichFetched: true,
+			// SandwichTxCount:         slotToSandwichTxCount[blk.Slot],
+			// SandwichCount:           slotToSandwichCount[blk.Slot],
+			// SandwichVictimCount:     slotToSandwichVictimCount[blk.Slot],
 			SandwichInBundleChecked: false,
 		})
 	}

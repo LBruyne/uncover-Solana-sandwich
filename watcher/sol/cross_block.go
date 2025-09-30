@@ -25,8 +25,6 @@ type CrossBlockSandwichFinder struct {
 	// Record the last evaluated sandwich info
 	lastTokenA           string
 	lastTokenB           string
-	lastFrontSlot        uint64
-	lastBackSlot         uint64
 	lastFrontTxEntries   []PoolEntry
 	lastBackTxEntries    []PoolEntry
 	lastVictimEntries    []PoolEntry
@@ -49,19 +47,13 @@ func NewCrossBlockSandwichFinder(blocks types.Blocks, amountThreshold uint) *Cro
 		Txs:                    make(types.Transactions, 0),
 	}
 
-	// 构造 blockMap
 	for _, b := range blocks {
 		f.blockMap[b.Slot] = b
 	}
 
-	// 初始化 Txs：拷贝一份，每个 tx 的 Position 为全局位置
-	var globalPos int
 	for _, b := range blocks {
 		for _, tx := range b.Txs {
-			copied := *tx // 深拷贝 transaction
-			copied.Position = globalPos
-			globalPos++
-
+			copied := *tx
 			f.Txs = append(f.Txs, &copied)
 		}
 	}
@@ -73,7 +65,6 @@ func NewCrossBlockSandwichFinder(blocks types.Blocks, amountThreshold uint) *Cro
 func (f *CrossBlockSandwichFinder) Find() {
 	f.Sandwiches = make([]*types.CrossBlockSandwich, 0)
 	f.confirmedSandwichTxIdx = make(map[int]bool)
-
 	f.buckets = buildTxBuckets(f.Txs, true)
 
 	if len(f.Txs) > 0 {
@@ -87,7 +78,7 @@ func (f *CrossBlockSandwichFinder) Find() {
 			}
 		}
 		logger.SolLogger.Info(
-			"[CrossBlockSandwichFinder] Searching slots",
+			"[CrossBlockSandwichFinder] Searching sandwich across slots",
 			"minSlot", minSlot,
 			"maxSlot", maxSlot,
 		)
@@ -150,15 +141,15 @@ func (f *CrossBlockSandwichFinder) collectFrontTxs(frontTxEntry PoolEntry, front
 
 	signer := frontTxEntry.Signer
 	res = append(res, frontTxEntry)
-	lastPos := frontTxEntry.Position
+	lastGlobalPos := frontTxEntry.TxIdx // Cross-block sandwich, use global position
 
 	// frontTxBucket is sorted by (slot, position), so we can just scan forward
 	for _, entry := range frontTxBucket {
-		if entry.Position <= lastPos {
+		if entry.TxIdx <= lastGlobalPos {
 			continue
 		}
 		// Cannot be too far away, if too far, stop here
-		if entry.Position-lastPos > maxGap {
+		if entry.TxIdx-lastGlobalPos > maxGap {
 			break
 		}
 		// Skip already confirmed tx in other sandwich
@@ -172,7 +163,7 @@ func (f *CrossBlockSandwichFinder) collectFrontTxs(frontTxEntry PoolEntry, front
 		}
 		// Valid front-run tx accompanying with the given frontTxEntry
 		res = append(res, entry)
-		lastPos = entry.Position
+		lastGlobalPos = entry.TxIdx
 	}
 	return res
 }
@@ -182,12 +173,12 @@ func (f *CrossBlockSandwichFinder) collectBackTxs(frontTxEntries []PoolEntry, ba
 	maxGap := config.SANDWICH_BACKRUN_MAX_GAP // How long can two back-run txs be apart
 
 	// Start from the last front-run tx position + 2, since at least one victim tx is required
-	lastFrontPos := frontTxEntries[len(frontTxEntries)-1].Position + 1
+	lastFrontPos := frontTxEntries[len(frontTxEntries)-1].TxIdx + 1
 
 	// Scan forward in backTxBucket to find the first valid back-run tx
 	for i, startBackEntry := range backTxBucket {
 
-		if startBackEntry.Position <= lastFrontPos {
+		if startBackEntry.TxIdx <= lastFrontPos {
 			continue
 		}
 		// Skip already confirmed tx in other sandwich
@@ -198,16 +189,16 @@ func (f *CrossBlockSandwichFinder) collectBackTxs(frontTxEntries []PoolEntry, ba
 
 		signer := startBackEntry.Signer
 		candidateBackTxEntries := []PoolEntry{startBackEntry}
-		lastPos := startBackEntry.Position
+		lastGlobalPos := startBackEntry.TxIdx
 
 		// Try to find other back-run txs accompanying with this back-run tx
 		for j := i + 1; j < len(backTxBucket); j++ {
 			backEntry := backTxBucket[j]
-			if backEntry.Position <= lastPos {
+			if backEntry.TxIdx <= lastGlobalPos {
 				continue
 			}
 			// Cannot be too far away, if too far, stop here
-			if backEntry.Position-lastPos > maxGap {
+			if backEntry.TxIdx-lastGlobalPos > maxGap {
 				break
 			}
 			// Skip already confirmed tx in other sandwich
@@ -222,7 +213,7 @@ func (f *CrossBlockSandwichFinder) collectBackTxs(frontTxEntries []PoolEntry, ba
 			}
 			// Valid back-run tx accompanying with the given backEntry candidate
 			candidateBackTxEntries = append(candidateBackTxEntries, backEntry)
-			lastPos = backEntry.Position
+			lastGlobalPos = backEntry.TxIdx
 		}
 
 		// if f.Txs[frontTxEntries[0].TxIdx].Signature == "6ZTDa1tbT22vsAcXoURNy58BzSiRv8oo6ewGxdA2M8WXUyr4swkGR54LfTiUz77EMwv7sLUT7KAgj5UM7ro8tWn" {
@@ -231,14 +222,7 @@ func (f *CrossBlockSandwichFinder) collectBackTxs(frontTxEntries []PoolEntry, ba
 
 		// Possible valid back-run tx accompanying with the given frontTxEntries
 		// Check if they form a sandwich: amount, victim txs, etc.
-
 		if f.Evaluate(frontTxEntries, candidateBackTxEntries) {
-			firstSlot := frontTxEntries[0].Slot
-			lastSlot := candidateBackTxEntries[len(candidateBackTxEntries)-1].Slot
-			if firstSlot == lastSlot {
-				return make([]PoolEntry, 0)
-			}
-
 			// Mark all these txs as confirmed sandwich txs
 			return candidateBackTxEntries
 		}
@@ -251,6 +235,12 @@ func (f *CrossBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEn
 	if len(frontTxEntries) == 0 || len(backTxEntries) == 0 {
 		return false
 	}
+
+	// Cross-block sandwich needs front and back txs in different slots
+	if frontTxEntries[0].Slot == backTxEntries[len(backTxEntries)-1].Slot {
+		return false
+	}
+
 	// Sandwich from A to B and back to A
 	tokenA := frontTxEntries[0].IncomeToken
 	if tokenA == "" || tokenA != backTxEntries[0].ExpenseToken {
@@ -289,7 +279,6 @@ func (f *CrossBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEn
 	var frontAmtB float64
 	for _, fe := range frontTxEntries {
 		// tokenB is frontTx.ExpenseToken
-		// 计算 frontTxs 中总共买入多少 tokenB
 		if fe.ExpenseAmt < 0 {
 			frontAmtB += -fe.ExpenseAmt
 		}
@@ -297,7 +286,6 @@ func (f *CrossBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEn
 	var backAmtB float64
 	for _, be := range backTxEntries {
 		// tokenB is backTx.IncomeToken
-		// 计算 frontTxs 中总共卖出多少 tokenB
 		if be.IncomeAmt > 0 {
 			backAmtB += be.IncomeAmt
 		}
@@ -405,8 +393,8 @@ func (f *CrossBlockSandwichFinder) collectVictimEntries(frontTxEntries, backTxEn
 		return make([]PoolEntry, 0)
 	}
 	// Victim txs must be between front and back
-	frontEndPos := frontTxEntries[len(frontTxEntries)-1].Position
-	backBeginPos := backTxEntries[0].Position
+	frontEndPos := frontTxEntries[len(frontTxEntries)-1].TxIdx
+	backBeginPos := backTxEntries[0].TxIdx
 	if backBeginPos <= frontEndPos+1 {
 		return make([]PoolEntry, 0) // No space for victim txs
 	}
@@ -428,7 +416,7 @@ func (f *CrossBlockSandwichFinder) collectVictimEntries(frontTxEntries, backTxEn
 			continue // Skip failed or vote transactions
 		}
 		// Must be between front and back
-		if e.Position <= frontEndPos || e.Position >= backBeginPos {
+		if e.TxIdx <= frontEndPos || e.TxIdx >= backBeginPos {
 			continue
 		}
 		// Must have different signer from front and back
