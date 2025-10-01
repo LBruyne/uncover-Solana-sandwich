@@ -74,11 +74,51 @@ func RunSandwichCmd(startSlot uint64) error {
 		logger.SolLogger.Info("Process slot data (done)", "start", startSlot, "num_in_block_sandwiches", len(inBlockSandwiches), "num_cross_block_sandwiches", len(crossBlockSandwiches), "process_time", time.Since(timeProess).String())
 
 		// Test print sandwiches
-		// for i, s := range inBlockSandwiches {
-		// 	types.PPInBlockSandwich(i+1, s)
+		// for _, s := range inBlockSandwiches {
+		// 	if s.TokenA != "SOL" {
+		// 		continue
+		// 	}
+
+		// 	transferFound := false
+		// 	for _, tx := range s.FrontRun {
+		// 		if tx.Type == "transfer" {
+		// 			transferFound = true
+		// 			break
+		// 		}
+		// 	}
+		// 	if transferFound {
+		// 		logger.SolLogger.Info("Found in-block sandwich with transfer")
+		// 		// types.PPInBlockSandwich(i+1, s)
+		// 		for _, tx := range s.FrontRun {
+		// 			logger.SolLogger.Info("  FrontRun", "tx", tx.Signature, "type", tx.Type, "signer", tx.Signer)
+		// 		}
+		// 		for _, tx := range s.BackRun {
+		// 			logger.SolLogger.Info("  BackRun ", "tx", tx.Signature, "type", tx.Type, "signer", tx.Signer)
+		// 		}
+		// 	}
 		// }
-		// for i, s := range crossBlockSandwiches {
-		// 	types.PPCrossBlockSandwich(i+1, s)
+		// for _, s := range crossBlockSandwiches {
+		// 	if s.TokenA != "SOL" {
+		// 		continue
+		// 	}
+
+		// 	transferFound := false
+		// 	for _, tx := range s.FrontRun {
+		// 		if tx.Type == "transfer" {
+		// 			transferFound = true
+		// 			break
+		// 		}
+		// 	}
+		// 	if transferFound {
+		// 		logger.SolLogger.Info("Found cross-block sandwich with transfer")
+		// 		// types.PPCrossBlockSandwich(i+1, s)
+		// 		for _, tx := range s.FrontRun {
+		// 			logger.SolLogger.Info("  FrontRun", "tx", tx.Signature, "type", tx.Type, "signer", tx.Signer)
+		// 		}
+		// 		for _, tx := range s.BackRun {
+		// 			logger.SolLogger.Info("  BackRun ", "tx", tx.Signature, "type", tx.Type, "signer", tx.Signer)
+		// 		}
+		// 	}
 		// }
 
 		// Save to DB
