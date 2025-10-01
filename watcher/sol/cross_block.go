@@ -352,6 +352,11 @@ func (f *CrossBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEn
 					continue // Skip failed or vote transactions
 				}
 
+				// Tx has no pool
+				if tx.RelatedPools.Cardinality() != 0 {
+					continue
+				}
+
 				// Only one owner increases tokenB and only one owner decreases tokenB
 				increaseBOwners := make([]string, 0)
 				decreaseBOwners := make([]string, 0)
