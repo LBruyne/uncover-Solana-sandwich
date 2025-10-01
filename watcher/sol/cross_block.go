@@ -28,6 +28,7 @@ type CrossBlockSandwichFinder struct {
 	lastFrontTxEntries   []PoolEntry
 	lastBackTxEntries    []PoolEntry
 	lastVictimEntries    []PoolEntry
+	lastTransferTxs      []*types.Transaction
 	perfect              bool
 	relativeAmtDiffB     float64
 	profitA              float64
@@ -318,45 +319,66 @@ func (f *CrossBlockSandwichFinder) Evaluate(frontTxEntries []PoolEntry, backTxEn
 	// If signers of frontTxs and backTxs are the same, it is confirmed right now
 	if frontSigner != backSigner {
 		// Different signers, cannot be confirmed right now
-		// We check if
-		// in lastFrontTx, the post-balance of tokenB of the attackers, is similar to
-		// in firstBackTx, the pre-balance of tokenB of the attackers
-		postBalanceBInFrtTxs := map[string]float64{}
+		// Check owner condition
+		ownersOfBInFrtTxs := MapSet.NewSet[string]()
 		for _, frtTxEntry := range frontTxEntries {
 			frtTx := f.Txs[frtTxEntry.TxIdx]
 			for owner, bc := range frtTx.OwnerBalanceChanges {
 				if bc[tokenB].TotalAmount > 0 {
 					// This owner may be the attacker
-					postBalanceBInFrtTxs[owner] = frtTx.OwnerPostBalances[owner][tokenB]
+					ownersOfBInFrtTxs.Add(owner)
 				}
 			}
 		}
-		preBalanceBInBckTxs := map[string]float64{}
+		ownersOfBInBckTxs := MapSet.NewSet[string]()
 		for _, bckTxEntry := range backTxEntries {
 			bckTx := f.Txs[bckTxEntry.TxIdx]
 			for owner, bc := range bckTx.OwnerBalanceChanges {
 				if bc[tokenB].TotalAmount < 0 {
 					// This owner may be the attacker
-					preBalanceBInBckTxs[owner] = bckTx.OwnerPreBalances[owner][tokenB]
+					ownersOfBInBckTxs.Add(owner)
 				}
 			}
 		}
-		var atkPostBalanceAfterFrtRun float64
-		for _, pB := range postBalanceBInFrtTxs {
-			atkPostBalanceAfterFrtRun += pB
-		}
-		var atkPreBalanceBeforeBckRun float64
-		for _, pB := range preBalanceBInBckTxs {
-			atkPreBalanceBeforeBckRun += pB
-		}
-		// Check if the balance is similar
-		threshold := utils.EPSILON
-		if tokenB == utils.SOL {
-			threshold = config.SANDWICH_AMOUNT_SOL_TOLERANCE // 1% tolerance for SOL due to rent/exchange fee
-		}
-		similar, _ = f.HasSimilarAmount(atkPostBalanceAfterFrtRun, atkPreBalanceBeforeBckRun, threshold)
-		if !similar {
-			return false // Attacker's balance of tokenB not similar enough before backTx(s) and after frontTx(s)
+		// Owner same, consider confirmed
+		if !ownersOfBInFrtTxs.IsSuperset(ownersOfBInBckTxs) {
+			// Owner different, need further check
+			// We check if there is a transfer tx of tokenB from attackers to others, where tokenB is transferred from owners in frontTx(s) to owners in backTx(s)
+			// Search txs between front and back
+			transferTxs := make([]*types.Transaction, 0)
+			for i := frontTxEntries[len(frontTxEntries)-1].TxIdx + 1; i < backTxEntries[0].TxIdx; i++ {
+				tx := f.Txs[i]
+				if tx == nil || tx.IsFailed || tx.IsVote {
+					continue // Skip failed or vote transactions
+				}
+
+				// Only one owner increases tokenB and only one owner decreases tokenB
+				increaseBOwners := make([]string, 0)
+				decreaseBOwners := make([]string, 0)
+				for owner, bc := range tx.OwnerBalanceChanges {
+					if bc[tokenB].TotalAmount > 0 {
+						increaseBOwners = append(increaseBOwners, owner)
+					} else if bc[tokenB].TotalAmount < 0 {
+						decreaseBOwners = append(decreaseBOwners, owner)
+					}
+				}
+				if len(increaseBOwners) != 1 || len(decreaseBOwners) != 1 {
+					continue // More than one owner increases or decreases tokenB, cannot confirm
+				}
+				increaseBOwner := increaseBOwners[0]
+				decreaseBOwner := decreaseBOwners[0]
+
+				// Check if the most decrease of tokenB is from front owners and the most increase of tokenB is from back owners, which forms a transfer from front owners to back owners
+				if ownersOfBInFrtTxs.Contains(decreaseBOwner) && ownersOfBInBckTxs.Contains(increaseBOwner) {
+					// Found a transfer tx of tokenB from frt owners to bck owners
+					transferTxs = append(transferTxs, tx)
+				}
+			}
+			if len(transferTxs) == 0 {
+				return false // No transfer tx found, cannot confirm this sandwich
+			}
+
+			f.lastTransferTxs = transferTxs
 		}
 	}
 
@@ -467,6 +489,16 @@ func (f *CrossBlockSandwichFinder) RecordSandwich() {
 	for _, fe := range f.lastFrontTxEntries {
 		frontTxs = append(frontTxs, f.makeSandwichTx(sandwichId, fe, "frontRun"))
 	}
+	transferTxs := make([]*types.SandwichTx, 0, len(f.lastTransferTxs))
+	for _, te := range f.lastTransferTxs {
+		transferTxs = append(transferTxs, &types.SandwichTx{
+			SandwichID:          sandwichId,
+			Transaction:         *te,
+			Type:                "transfer",
+			SandwichTxTokenInfo: types.SandwichTxTokenInfo{},
+			InBundle:            false,
+		})
+	}
 	backTxs := make([]*types.SandwichTx, 0, len(f.lastBackTxEntries))
 	for _, be := range f.lastBackTxEntries {
 		backTxs = append(backTxs, f.makeSandwichTx(sandwichId, be, "backRun"))
@@ -510,6 +542,9 @@ func (f *CrossBlockSandwichFinder) RecordSandwich() {
 	// Slot and timestamp
 	slot := f.Txs[f.lastFrontTxEntries[0].TxIdx].Slot
 	timestamp := f.Txs[f.lastFrontTxEntries[0].TxIdx].Timestamp
+
+	// Combine frontTxs, transferTxs when recording
+	frontTxs = append(frontTxs, transferTxs...)
 
 	// Make CrossBlockSandwich
 	s := &types.CrossBlockSandwich{
@@ -612,4 +647,5 @@ func (f *CrossBlockSandwichFinder) ResetSandwichState() {
 	f.lastFrontTxEntries = nil
 	f.lastBackTxEntries = nil
 	f.lastVictimEntries = nil
+	f.lastTransferTxs = nil
 }
