@@ -19,3 +19,5 @@
 watcher/watcher
 watcher/test.py
 watcher/test.sql
+
+/analyst/__pycache__/
