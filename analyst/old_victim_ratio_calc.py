@@ -5,6 +5,8 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 
+from utils import get_prev_epoch_info
+
 def load_env():
     load_dotenv(dotenv_path=".old.env")
     return {
@@ -24,33 +26,6 @@ client = clickhouse_connect.get_client(
     username='sol',
     password='sol'
 )
-
-solana_rpc_url = "https://api.mainnet-beta.solana.com"
-
-def get_prev_epoch_info():
-    """
-    Fetch Solana epoch information via JSON-RPC and compute the previous epoch's ID and slot range.
-    """
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getEpochInfo"
-    }
-    response = requests.post(solana_rpc_url, json=payload)
-    data = response.json()["result"]
-    print(f"Current epoch: {data['epoch']}, Slot: {data['absoluteSlot']}, Slot index in epoch: {data['slotIndex']}, Slots in epoch: {data['slotsInEpoch']}")
-
-    current_epoch = data["epoch"]
-    current_slot = data["absoluteSlot"]
-    slot_index = data["slotIndex"]
-    slots_in_epoch = data["slotsInEpoch"]
-
-    current_epoch_start = current_slot - slot_index
-    prev_epoch = current_epoch - 1
-    prev_epoch_start = current_epoch_start - slots_in_epoch
-    prev_epoch_end = current_epoch_start - 1
-
-    return prev_epoch, prev_epoch_start, prev_epoch_end
 
 def get_validator_info_from_clickhouse(epoch: int) -> pd.DataFrame:
     """
@@ -138,8 +113,8 @@ if __name__ == "__main__":
     final_df["total_stake"] = final_df["total_stake"].round(2)
 
     # # Compute weighted victim count (stake-weighted)
-    # total_stake = final_df["total_stake"].sum()
-    # final_df["weighted_victim_count"] = ((final_df["total_stake"] / total_stake) * final_df["victim_count"]).round(4)
+    total_stake = final_df["total_stake"].sum()
+    final_df["weighted_victim_count"] = ((final_df["total_stake"] / total_stake) * final_df["victim_count"]).round(4)
 
     # Step 5: Query slot leadership counts
     slot_sum_df = query_slot_counts(start_slot, end_slot)
