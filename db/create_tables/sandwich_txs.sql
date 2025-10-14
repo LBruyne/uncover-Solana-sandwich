@@ -10,8 +10,8 @@ CREATE TABLE IF NOT EXISTS solwich.sandwich_txs
     `signature` String,
     `signer` String,
     `inBundle` Bool,
-    `AccountKeys` Array(String),
-    `Programs` Array(String),
+    `accountKeys` Array(String),
+    `programs` Array(String),
 
     `fromToken` String,
     `toToken` String,

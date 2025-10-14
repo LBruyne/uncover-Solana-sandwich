@@ -346,7 +346,7 @@ func ProcessCrossBlockSandwich(blocks types.Blocks) []*types.CrossBlockSandwich 
 }
 
 func FindCrossBlockSandwiches(blocks types.Blocks) []*types.CrossBlockSandwich {
-	finder := NewCrossBlockSandwichFinder(blocks, config.INBLOCK_SANDWICH_AMOUNT_THRESHOLD)
+	finder := NewCrossBlockSandwichFinder(blocks, config.CROSSBLOCK_SANDWICH_AMOUNT_THRESHOLD)
 
 	finder.Find()
 	return finder.Sandwiches

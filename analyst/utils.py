@@ -3,7 +3,7 @@ import requests
 solana_rpc_url = "https://api.mainnet-beta.solana.com"
 
 
-def get_prev_epoch_info():
+def fetch_prev_epoch_info():
     """
     Fetch Solana epoch information via JSON-RPC and compute the previous epoch's ID and slot range.
     """
