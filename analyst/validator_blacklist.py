@@ -391,8 +391,7 @@ if __name__ == "__main__":
         .sort_values("count", ascending=False)
     )
     total1 = int(cov1["count"].sum()) if not cov1.empty else 0
-    if total1 > 0:
-        cov1["share"] = cov1["count"] / total1
+    cov1["share"] = cov1["count"] / total1
     print("Jito bundle coverage (all/partial/none):")
     print(cov1)
 
@@ -402,16 +401,11 @@ if __name__ == "__main__":
     ]
     print("\n[2] In-block & non-contiguous sandwiches")
     print(f"Count: {len(inblock_non_contig)}")
-    # distance 分布（只看非空、非负）
     dist = inblock_non_contig["inblock_distance"].dropna().astype(int)
     print("Distance summary (first_backrun.position - last_frontrun.position):")
-    if not dist.empty:
-        print(dist.describe())  # count, mean, std, min, 25%, 50%, 75%, max
-        # 若需要频数分布（Top K）
-        print("Top distances (value counts):")
-        print(dist.value_counts().head(10))
-    else:
-        print("No distance computable (missing front/back in some sandwiches).")
+    print(dist.describe())
+    print("Top distances (value counts):")
+    print(dist.value_counts().head(10))
 
     cov2 = (
         inblock_non_contig[inblock_non_contig["bundle_status"] != "no_tx"]
@@ -443,7 +437,6 @@ if __name__ == "__main__":
         .sort_values("count", ascending=False)
     )
     total3 = int(cov3["count"].sum()) if not cov3.empty else 0
-    if total3 > 0:
-        cov3["share"] = cov3["count"] / total3
+    cov3["share"] = cov3["count"] / total3
     print("Jito bundle coverage (all/partial/none):")
     print(cov3)
