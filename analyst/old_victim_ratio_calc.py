@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 
-from utils import get_prev_epoch_info
+from utils import fetch_prev_epoch_info
 
 def load_env():
     load_dotenv(dotenv_path=".old.env")
@@ -97,7 +97,7 @@ def query_total_victim_counts(start_slot: int, end_slot: int) -> pd.DataFrame:
 
 if __name__ == "__main__":
     # Step 1: Fetch previous epoch metadata
-    prev_epoch, start_slot, end_slot = get_prev_epoch_info()
+    prev_epoch, start_slot, end_slot = fetch_prev_epoch_info()
     print(f"Previous epoch: {prev_epoch}, Slot range: {start_slot} to {end_slot}")
 
     # Step 2: Query validator stake and commission info

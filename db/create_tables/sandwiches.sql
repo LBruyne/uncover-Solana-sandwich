@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS solwich.sandwiches
     `multiVictim` Bool,
     `frontCount` UInt16,
     `backCount` UInt16,
-    `victimCount` UInt16
+    `victimCount` UInt16,
     `frontConsecutive` Bool,
     `backConsecutive` Bool,
     `victimConsecutive` Bool,
