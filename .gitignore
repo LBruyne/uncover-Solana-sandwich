@@ -5,6 +5,7 @@
 
 .env
 .old.env
+.VSCodeCounter
 
 *.sql
 !db/create_tables/**.sql

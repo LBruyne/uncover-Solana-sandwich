@@ -109,7 +109,6 @@ func (f *InBlockSandwichFinder) ResetSandwichState() {
 // / collectFrontTxs collects front-run transaction candidates from frontTxBucket that can accompany with the given frontTxEntry. Note that we consider multiple front-run transactions for sandwich attack.
 func (f *InBlockSandwichFinder) collectFrontTxs(frontTxEntry PoolEntry, frontTxBucket []PoolEntry) []PoolEntry {
 	res := make([]PoolEntry, 0)
-	maxGap := config.SANDWICH_FRONTRUN_MAX_GAP // How long can two fornt-run txs be apart
 
 	if f.confirmedSandwichTxIdx != nil && f.confirmedSandwichTxIdx[frontTxEntry.TxIdx] {
 		return res // This tx has been confirmed as part of a sandwich
@@ -118,44 +117,19 @@ func (f *InBlockSandwichFinder) collectFrontTxs(frontTxEntry PoolEntry, frontTxB
 		return res // Skip failed or vote transactions
 	}
 
-	signer := frontTxEntry.Signer
 	res = append(res, frontTxEntry)
-	lastPos := frontTxEntry.Position
 
-	// frontTxBucket is sorted by (slot, position), so we can just scan forward
-	for _, entry := range frontTxBucket {
-		if entry.Position <= lastPos {
-			continue
-		}
-		// Cannot be too far away, if too far, stop here
-		if entry.Position-lastPos > maxGap {
-			break
-		}
-		// Skip already confirmed tx in other sandwich
-		// Skip failed or vote transactions
-		if (f.confirmedSandwichTxIdx != nil && f.confirmedSandwichTxIdx[entry.TxIdx]) || f.Txs[entry.TxIdx] == nil || f.Txs[entry.TxIdx].IsFailed || f.Txs[entry.TxIdx].IsVote {
-			continue
-		}
-		// Must have the same signer
-		if entry.Signer != signer {
-			continue
-		}
-		// Valid front-run tx accompanying with the given frontTxEntry
-		res = append(res, entry)
-		lastPos = entry.Position
-	}
 	return res
 }
 
 // collectBackTxs collects back-run transaction candidates from backTxBucket that can pair with the given frontTxEntry. Note that we consider multiple back-run transactions to match the front-run transaction(s).
 func (f *InBlockSandwichFinder) collectBackTxs(frontTxEntries []PoolEntry, backTxBucket []PoolEntry) []PoolEntry {
-	maxGap := config.SANDWICH_BACKRUN_MAX_GAP // How long can two back-run txs be apart
 
 	// Start from the last front-run tx position + 2, since at least one victim tx is required
 	lastFrontPos := frontTxEntries[len(frontTxEntries)-1].Position + 1
 
 	// Scan forward in backTxBucket to find the first valid back-run tx
-	for i, startBackEntry := range backTxBucket {
+	for _, startBackEntry := range backTxBucket {
 		// if f.Txs[frontTxEntries[0].TxIdx].Signature == "6ZTDa1tbT22vsAcXoURNy58BzSiRv8oo6ewGxdA2M8WXUyr4swkGR54LfTiUz77EMwv7sLUT7KAgj5UM7ro8tWn" {
 		// 	fmt.Printf("Debug: scanning specific backTx: %+v\n", startBackEntry)
 		// }
@@ -169,41 +143,8 @@ func (f *InBlockSandwichFinder) collectBackTxs(frontTxEntries []PoolEntry, backT
 			continue
 		}
 
-		signer := startBackEntry.Signer
 		candidateBackTxEntries := []PoolEntry{startBackEntry}
-		lastPos := startBackEntry.Position
 
-		// Try to find other back-run txs accompanying with this back-run tx
-		for j := i + 1; j < len(backTxBucket); j++ {
-			backEntry := backTxBucket[j]
-			if backEntry.Position <= lastPos {
-				continue
-			}
-			// Cannot be too far away, if too far, stop here
-			if backEntry.Position-lastPos > maxGap {
-				break
-			}
-			// Skip already confirmed tx in other sandwich
-			// Skip failed or vote transactions
-			if (f.confirmedSandwichTxIdx != nil && f.confirmedSandwichTxIdx[backEntry.TxIdx]) ||
-				f.Txs[backEntry.TxIdx] == nil || f.Txs[backEntry.TxIdx].IsFailed || f.Txs[backEntry.TxIdx].IsVote {
-				continue
-			}
-			// Must have the same signer, if meet different signer
-			if backEntry.Signer != signer {
-				continue
-			}
-			// Valid back-run tx accompanying with the given backEntry candidate
-			candidateBackTxEntries = append(candidateBackTxEntries, backEntry)
-			lastPos = backEntry.Position
-		}
-
-		// if f.Txs[frontTxEntries[0].TxIdx].Signature == "6ZTDa1tbT22vsAcXoURNy58BzSiRv8oo6ewGxdA2M8WXUyr4swkGR54LfTiUz77EMwv7sLUT7KAgj5UM7ro8tWn" {
-		// 	fmt.Printf("Debug: found specific backTx: %+v\n", candidateBackTxEntries)
-		// }
-
-		// Possible valid back-run tx accompanying with the given frontTxEntries
-		// Check if they form a sandwich: amount, victim txs, etc.
 		if f.Evaluate(frontTxEntries, candidateBackTxEntries) {
 			// Mark all these txs as confirmed sandwich txs
 			return candidateBackTxEntries

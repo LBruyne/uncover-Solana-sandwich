@@ -42,7 +42,7 @@ const (
 
 	SOL_FETCH_SLOT_DATA_MAX_GAP        = 10000 // the API can preserve block data ~3 hours ago
 	SOL_FETCH_SLOT_DATA_SLOT_NUM       = 8     // number of slots to fetch each time
-	SOL_FETCH_SLOT_DATA_PARALLEL_NUM   = 8     // number of parallel requests
+	SOL_FETCH_SLOT_DATA_PARALLEL_NUM   = 1     // number of parallel requests
 	SOL_FETCH_SLOT_DATA_RETRYS         = 3     // number of retries on failure
 	SOL_FETCH_SLOT_DATA_LONG_INTERVAL  = 400 * time.Millisecond * SOL_FETCH_SLOT_DATA_SLOT_NUM
 	SOL_FETCH_SLOT_DATA_SHORT_INTERVAL = 400 * time.Millisecond
@@ -50,7 +50,7 @@ const (
 
 // Detection config
 const (
-	SOL_PROCESS_IN_BLOCK_SANDWICH_PARALLEL_NUM = 8 // number of parallel processing in-block sandwiches
+	SOL_PROCESS_IN_BLOCK_SANDWICH_PARALLEL_NUM = 1 // number of parallel processing in-block sandwiches
 
 	JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL = 10 * time.Second // interval to mark sandwich txs in bundle
 
@@ -62,7 +62,6 @@ const (
 	SANDWICH_FRONTRUN_MAX_GAP = 10 // How long can two front-run txs be apart
 
 	CROSS_BLOCK_CACHE_SIZE                        = 32
-	CROSS_BLOCK_SANDWICH_MAX_SLOT_GAP             = 10
 	SOL_PROCESS_CROSS_BLOCK_SANDWICH_PARALLEL_NUM = 8
 	SOL_PROCESS_CROSS_BLOCK_BUCKETS_PARALLEL_NUM  = 8
 )

@@ -32,7 +32,7 @@ echo "Watcher built successfully."
 # sleep 5
 
 # Sync blocks and search for sandwiches
-nohup ./watcher sandwich -s 370453692 &
+# nohup ./watcher sandwich -s 370453692 &
 
 # Sync slot_leaders
 # nohup ./watcher leader -s 360000000 -t &

@@ -240,6 +240,8 @@ func GetBlock(slot uint64) (*types.Block, error) {
 		return nil, err
 	}
 
+	// logger.SolLogger.Info("GetBlock raw result", "slot", slot, "raw_size", len(fmt.Sprintf("%v", raw)))
+
 	// Defensive: handle null result (can happen on some nodes)
 	if raw == nil {
 		return nil, fmt.Errorf(utils.SKIPPED_BLOCK)
