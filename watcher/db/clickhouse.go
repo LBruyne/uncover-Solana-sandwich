@@ -484,22 +484,44 @@ func (d *ClickhouseDB) UpdateSandwichTxsInBundle(results []types.JitoBundleMarkR
 		return fmt.Errorf("failed to set mutations_sync: %w", err)
 	}
 
-	// 构造 WHERE (slot, signature) IN ((slot1, sig1), (slot2, sig2), ...)
-	var pairs []string
-	args := make([]any, 0)
+	const batchSize = 500
+	type pair struct {
+		slot uint64
+		sig  string
+	}
+	var allPairs []pair
 	for _, r := range results {
 		for _, sig := range r.Hits {
-			pairs = append(pairs, "(?, ?)")
-			args = append(args, r.Slot, sig)
+			allPairs = append(allPairs, pair{slot: r.Slot, sig: sig})
 		}
 	}
-	q := fmt.Sprintf(`
-		ALTER TABLE solwich.sandwich_txs
-		UPDATE inBundle = 1
-		WHERE (slot, signature) IN (%s)
-	`, strings.Join(pairs, ", "))
 
-	return d.conn.Exec(context.Background(), q, args...)
+	for i := 0; i < len(allPairs); i += batchSize {
+		end := i + batchSize
+		if end > len(allPairs) {
+			end = len(allPairs)
+		}
+		batch := allPairs[i:end]
+
+		var pairs []string
+		args := make([]any, 0, len(batch)*2)
+		for _, p := range batch {
+			pairs = append(pairs, "(?, ?)")
+			args = append(args, p.slot, p.sig)
+		}
+
+		q := fmt.Sprintf(`
+			ALTER TABLE solwich.sandwich_txs
+			UPDATE inBundle = 1
+			WHERE (slot, signature) IN (%s)
+		`, strings.Join(pairs, ", "))
+
+		if err := d.conn.Exec(context.Background(), q, args...); err != nil {
+			return fmt.Errorf("failed to update batch [%d:%d]: %w", i, end, err)
+		}
+	}
+
+	return nil
 }
 
 func (d *ClickhouseDB) QuerySandwichTxsBySlot(slot uint64) ([]string, error) {
