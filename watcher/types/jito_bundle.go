@@ -13,3 +13,8 @@ type JitoBundle struct {
 }
 
 type JitoBundles []*JitoBundle
+
+type JitoBundleMarkResult struct {
+	Slot uint64
+	Hits []string
+}

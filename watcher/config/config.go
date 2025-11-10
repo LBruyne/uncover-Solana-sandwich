@@ -54,6 +54,9 @@ const (
 
 	JITO_MARK_IN_BUNDLE_SANDWICH_TX_INTERVAL = 10 * time.Second // interval to mark sandwich txs in bundle
 
+	JITO_MARK_IN_BUNDLE_SLOT_NUM     = 100
+	JITO_MARK_IN_BUNDLE_PARALLEL_NUM = 8
+
 	INBLOCK_SANDWICH_AMOUNT_THRESHOLD    = uint(5) // relative threshold between front-run/back-run
 	CROSSBLOCK_SANDWICH_AMOUNT_THRESHOLD = uint(5)
 	SANDWICH_AMOUNT_SOL_TOLERANCE        = 0.1

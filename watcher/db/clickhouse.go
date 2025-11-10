@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 	"watcher/logger"
 	"watcher/types"
@@ -284,6 +285,39 @@ func (d *ClickhouseDB) QueryBundleTxsBySlot(slot uint64) ([]string, error) {
 	return txs, rows.Err()
 }
 
+func (d *ClickhouseDB) QueryBundleTxsBySlots(slots []uint64) (map[uint64][]string, error) {
+	if len(slots) == 0 {
+		return nil, nil
+	}
+	q := fmt.Sprintf(`
+		SELECT slot, arrayJoin(transactions) AS tx
+		FROM solwich.jito_bundles
+		WHERE slot IN (%s)
+	`, placeholders(len(slots)))
+
+	args := make([]any, len(slots))
+	for i, s := range slots {
+		args[i] = s
+	}
+
+	rows, err := d.conn.Query(context.Background(), q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query bundle txs by slots: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[uint64][]string)
+	for rows.Next() {
+		var slot uint64
+		var tx string
+		if err := rows.Scan(&slot, &tx); err != nil {
+			return nil, err
+		}
+		result[slot] = append(result[slot], tx)
+	}
+	return result, rows.Err()
+}
+
 func (d *ClickhouseDB) InsertSlotBundles(statuses []*types.SlotBundlesStatus) error {
 	if len(statuses) == 0 {
 		return nil
@@ -338,12 +372,26 @@ func (d *ClickhouseDB) InsertSlotTxs(statuses []*types.SlotTxsStatus) error {
 	return batch.Send()
 }
 
-func (d *ClickhouseDB) UpdateSlotTxsCheckInBundle(slot uint64, check bool) error {
+func (d *ClickhouseDB) UpdateSlotTxsCheckInBundle(slots []uint64, check bool) error {
+	if len(slots) == 0 {
+		return nil
+	}
 	if err := d.conn.Exec(context.Background(), "SET mutations_sync = 1"); err != nil {
 		return fmt.Errorf("failed to set mutations_sync: %w", err)
 	}
-	q := `ALTER TABLE solwich.slot_txs UPDATE sandwichInBundleChecked = ? WHERE slot = ?`
-	return d.conn.Exec(context.Background(), q, check, slot)
+
+	q := fmt.Sprintf(`
+		ALTER TABLE solwich.slot_txs
+		UPDATE sandwichInBundleChecked = ?
+		WHERE slot IN (%s)
+	`, placeholders(len(slots)))
+
+	args := make([]any, 0, len(slots)+1)
+	args = append(args, check)
+	for _, s := range slots {
+		args = append(args, s)
+	}
+	return d.conn.Exec(context.Background(), q, args...)
 }
 
 func (d *ClickhouseDB) InsertSlotLeaders(leaders types.SlotLeaders) error {
@@ -428,22 +476,30 @@ func (d *ClickhouseDB) InsertSandwichTxs(sandwichTxs []*types.SandwichTx) error 
 	return batch.Send()
 }
 
-func (d *ClickhouseDB) UpdateSandwichTxsInBundle(slot uint64, txsInBundle []string) error {
-	if len(txsInBundle) == 0 {
+func (d *ClickhouseDB) UpdateSandwichTxsInBundle(results []types.JitoBundleMarkResult) error {
+	if len(results) == 0 {
 		return nil
 	}
-	params := make([]any, 0, len(txsInBundle)+1)
-	params = append(params, slot)
-	inList := "?"
-	for i := 1; i < len(txsInBundle); i++ {
-		inList += ", ?"
-	}
-	for _, s := range txsInBundle {
-		params = append(params, s)
+	if err := d.conn.Exec(context.Background(), "SET mutations_sync = 1"); err != nil {
+		return fmt.Errorf("failed to set mutations_sync: %w", err)
 	}
 
-	q := fmt.Sprintf(`ALTER TABLE solwich.sandwich_txs UPDATE inBundle = 1 WHERE slot = ? AND signature IN (%s)`, inList)
-	return d.conn.Exec(context.Background(), q, params...)
+	// 构造 WHERE (slot, signature) IN ((slot1, sig1), (slot2, sig2), ...)
+	var pairs []string
+	args := make([]any, 0)
+	for _, r := range results {
+		for _, sig := range r.Hits {
+			pairs = append(pairs, "(?, ?)")
+			args = append(args, r.Slot, sig)
+		}
+	}
+	q := fmt.Sprintf(`
+		ALTER TABLE solwich.sandwich_txs
+		UPDATE inBundle = 1
+		WHERE (slot, signature) IN (%s)
+	`, strings.Join(pairs, ", "))
+
+	return d.conn.Exec(context.Background(), q, args...)
 }
 
 func (d *ClickhouseDB) QuerySandwichTxsBySlot(slot uint64) ([]string, error) {
@@ -465,6 +521,39 @@ func (d *ClickhouseDB) QuerySandwichTxsBySlot(slot uint64) ([]string, error) {
 	return txs, rows.Err()
 }
 
+func (d *ClickhouseDB) QuerySandwichTxsBySlots(slots []uint64) (map[uint64][]string, error) {
+	if len(slots) == 0 {
+		return nil, nil
+	}
+	q := fmt.Sprintf(`
+		SELECT slot, signature
+		FROM solwich.sandwich_txs
+		WHERE slot IN (%s)
+	`, placeholders(len(slots)))
+
+	args := make([]any, len(slots))
+	for i, s := range slots {
+		args[i] = s
+	}
+
+	rows, err := d.conn.Query(context.Background(), q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sandwich txs by slots: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[uint64][]string)
+	for rows.Next() {
+		var slot uint64
+		var sig string
+		if err := rows.Scan(&slot, &sig); err != nil {
+			return nil, err
+		}
+		result[slot] = append(result[slot], sig)
+	}
+	return result, rows.Err()
+}
+
 func (d *ClickhouseDB) QueryFirstSlotToCheckInBundle() (uint64, error) {
 	row := d.conn.QueryRow(context.Background(), `
 		SELECT ifNull(min(t.slot), toUInt64(0))
@@ -478,4 +567,39 @@ func (d *ClickhouseDB) QueryFirstSlotToCheckInBundle() (uint64, error) {
 		return 0, fmt.Errorf("failed to query first slot to check in bundle: %w", err)
 	}
 	return slot, nil
+}
+
+func (d *ClickhouseDB) QuerySlotsToCheckInBundle(limit int) ([]uint64, error) {
+	rows, err := d.conn.Query(context.Background(), fmt.Sprintf(`
+		SELECT slot
+		FROM solwich.slot_txs AS t
+		ANY INNER JOIN solwich.slot_bundles AS b USING (slot)
+		WHERE t.txFetched = 1 
+		  AND t.sandwichFetched = 1 
+		  AND t.sandwichInBundleChecked = 0
+		  AND b.bundleFetched = 1
+		ORDER BY slot ASC
+		LIMIT %d
+	`, limit))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query slots to check in bundle: %w", err)
+	}
+	defer rows.Close()
+
+	var slots []uint64
+	for rows.Next() {
+		var slot uint64
+		if err := rows.Scan(&slot); err != nil {
+			return nil, err
+		}
+		slots = append(slots, slot)
+	}
+	return slots, rows.Err()
+}
+
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.TrimRight(strings.Repeat("?,", n), ",")
 }
