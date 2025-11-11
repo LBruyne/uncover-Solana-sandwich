@@ -22,5 +22,7 @@ watcher/test.py
 watcher/test.sql
 
 /analyst/__pycache__/
+!/analyst/performance.csv
+!/analyst/sandwiches_site_db_comparison.csv
 
 /scutumTest
