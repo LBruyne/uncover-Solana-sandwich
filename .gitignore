@@ -26,3 +26,5 @@ watcher/test.sql
 !/analyst/sandwiches_site_db_comparison.csv
 
 /scutumTest
+
+**.parquet

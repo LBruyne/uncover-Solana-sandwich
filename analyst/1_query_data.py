@@ -1,33 +1,33 @@
-import os, math, time
+import gc
+import math
+import os
+import time
 from typing import Callable, Optional, Sequence
-from clickhouse_connect import get_client
+
 import pandas as pd
+import pyarrow.dataset as ds
 import requests
+from clickhouse_connect import get_client
+from clickhouse_connect.driver import exceptions as chx
 from dotenv import load_dotenv
 from tqdm import tqdm
-import pandas.api.types as ptypes
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
-import matplotlib.dates as mdates
-from clickhouse_connect.driver import exceptions as chx
-import gc
-import pyarrow.dataset as ds, pandas as pd
 
 START_SLOT = 370656000  # Start of epoch 858
-END_SLOT = 377135999    # End of epoch 872
+END_SLOT = 377135999  # End of epoch 872
 TX_TYPES = ["frontRun", "backRun", "victim", "transfer"]
 ATTACKER_TX_TYPES = ["frontRun", "backRun", "transfer"]
 EPS_WIN = 1e-5
 
+
 def load_env():
     load_dotenv(dotenv_path=".env")
     return {
-        "host": os.getenv("CLICKHOUSE_HOST"),
-        "port": int(os.getenv("CLICKHOUSE_PORT")),
-        "username": os.getenv("CLICKHOUSE_USERNAME"),
-        "password": os.getenv("CLICKHOUSE_PASSWORD"),
+        "host": os.getenv("NEW_CLICKHOUSE_HOST"),
+        "port": int(os.getenv("NEW_CLICKHOUSE_PORT")),
+        "username": os.getenv("NEW_CLICKHOUSE_USERNAME"),
+        "password": os.getenv("NEW_CLICKHOUSE_PASSWORD"),
     }
+
 
 def quert_slot_info_in_DB(start_slot=0, end_slot=500000000):
     """
@@ -47,6 +47,7 @@ def quert_slot_info_in_DB(start_slot=0, end_slot=500000000):
     result = client.query(query)
     df = pd.DataFrame(result.result_rows, columns=result.column_names)
     return df
+
 
 def query_current_slots_in_DB(start_slot=0, end_slot=500000000):
     """
@@ -70,6 +71,7 @@ def query_current_slots_in_DB(start_slot=0, end_slot=500000000):
     total_slots = df["total_slots"].iloc[0]
     return min_slot, max_slot, total_slots
 
+
 def query_sandwiches_with_txs_and_leader_to_parquet(
     start_slot: int,
     end_slot: int,
@@ -85,7 +87,7 @@ def query_sandwiches_with_txs_and_leader_to_parquet(
     Split the data into chunks and write each chunk directly to a Parquet file.
     """
     if client is None:
-        client = get_client() 
+        client = get_client()
 
     os.makedirs(out_dir, exist_ok=True)
 
@@ -105,7 +107,7 @@ def query_sandwiches_with_txs_and_leader_to_parquet(
 
     written_files = []
 
-    for (chunk_start, chunk_end) in slots:
+    for chunk_start, chunk_end in slots:
         retries = 0
         while True:
             try:
@@ -171,7 +173,7 @@ def query_sandwiches_with_txs_and_leader_to_parquet(
 
                 result = client.query(query)
                 if not result.result_rows:
-                    break 
+                    break
 
                 df_chunk = pd.DataFrame(result.result_rows, columns=result.column_names)
 
@@ -194,13 +196,22 @@ def query_sandwiches_with_txs_and_leader_to_parquet(
                 del df_chunk
                 break
 
-            except (chx.OperationalError, chx.DatabaseError, chx.InternalError, chx.Error) as e:
+            except (
+                chx.OperationalError,
+                chx.DatabaseError,
+                chx.InternalError,
+                chx.Error,
+            ) as e:
                 retries += 1
                 if retries > 3:
-                    print(f"[Fatal] {chunk_start}-{chunk_end} failed after retries: {e}")
+                    print(
+                        f"[Fatal] {chunk_start}-{chunk_end} failed after retries: {e}"
+                    )
                     break
                 wait = 2 * retries
-                print(f"[Retry {retries}] {chunk_start}-{chunk_end}: {e} → sleep {wait}s")
+                print(
+                    f"[Retry {retries}] {chunk_start}-{chunk_end}: {e} → sleep {wait}s"
+                )
                 time.sleep(wait)
 
             except Exception as e:
@@ -210,10 +221,13 @@ def query_sandwiches_with_txs_and_leader_to_parquet(
     print(f"\nFinished. Wrote {len(written_files)} parquet parts into {out_dir}")
     return written_files
 
+
 WSOL = "So11111111111111111111111111111111111111112"
+
 
 def to_mint(tokenA):
     return WSOL if tokenA.upper() == "SOL" else tokenA
+
 
 def fetch_token_prices(tokens):
     """
@@ -234,23 +248,26 @@ def fetch_token_prices(tokens):
             d = r.json()
             val = float(d["nativePrice"]["value"])
             dec = int(d["nativePrice"]["decimals"])
-            price_sol = val / (10 ** dec)
+            price_sol = val / (10**dec)
             price_usd = float(d["usdPrice"])
         except Exception as e:
             print(f"Failed to fetch price for {t}: {e}")
             price_sol = price_usd = None
         price_rows.append((t, price_sol, price_usd))
-        time.sleep(0.05)  
+        time.sleep(0.05)
 
     price_df = pd.DataFrame(price_rows, columns=["tokenA", "price_in_sol", "usd_price"])
     return price_df
 
+
 def _build_profit_view(
     df: pd.DataFrame,
     fetch_token_prices_func: Callable[[list[str]], pd.DataFrame] = fetch_token_prices,
-    top_n_tokens: int = 20
+    top_n_tokens: int = 20,
 ) -> pd.DataFrame:
-    base = df.drop_duplicates(subset=["sandwichId"])[["sandwichId", "tokenA", "profitA"]].copy()
+    base = df.drop_duplicates(subset=["sandwichId"])[
+        ["sandwichId", "tokenA", "profitA"]
+    ].copy()
     base["tokenA"] = base["tokenA"].fillna("UNKNOWN")
     base["profitA"] = base["profitA"].fillna(0.0)
 
@@ -265,6 +282,7 @@ def _build_profit_view(
     base["is_SOL"] = base["tokenA"] == "SOL"
     base["profit_SOL"] = base["profitA"].where(base["is_SOL"], 0.0)
     return base
+
 
 def _analyze_one_chunk(
     chunk_df: pd.DataFrame,
@@ -291,8 +309,10 @@ def _analyze_one_chunk(
         victim_count = int(len(victim))
 
         pos_unique = sorted(txs["position"].dropna().unique().tolist())
-        consecutive = (not cross_block) and len(pos_unique) > 0 and (
-            pos_unique[-1] - pos_unique[0] + 1 == len(pos_unique)
+        consecutive = (
+            (not cross_block)
+            and len(pos_unique) > 0
+            and (pos_unique[-1] - pos_unique[0] + 1 == len(pos_unique))
         )
 
         last_front_pos = fr["position"].max() if not fr.empty else None
@@ -314,7 +334,11 @@ def _analyze_one_chunk(
         tx_fee = fr_fee + br_fee
 
         # inblock distance
-        if (not cross_block) and last_front_pos is not None and first_back_pos is not None:
+        if (
+            (not cross_block)
+            and last_front_pos is not None
+            and first_back_pos is not None
+        ):
             inblock_distance = int(first_back_pos - last_front_pos)
 
         # cross block distance
@@ -376,15 +400,16 @@ def _analyze_one_chunk(
 
     return pd.DataFrame(dist_rows)
 
+
 def analyze_sandwiches(
     sandwiches_txs: pd.DataFrame,
-    fetch_token_prices_func: Callable[[list[str]], pd.DataFrame]  = fetch_token_prices,
+    fetch_token_prices_func: Callable[[list[str]], pd.DataFrame] = fetch_token_prices,
     top_n_tokens: int = 20,
-    analyze_bundle_status: bool = True,  
+    analyze_bundle_status: bool = True,
     verbose: bool = True,
     slot_info: Optional[pd.DataFrame] = None,
-    chunk_size: int = 200_000,            
-    out_path: Optional[str] = None,      
+    chunk_size: int = 200_000,
+    out_path: Optional[str] = None,
 ) -> pd.DataFrame:
     df = sandwiches_txs.copy()
 
@@ -423,7 +448,7 @@ def analyze_sandwiches(
 
         del batch_df, dist_df
         gc.collect()
-        time.sleep(0)  
+        time.sleep(0)
 
     if out_path is None:
         dist_all = pd.concat(pieces, ignore_index=True)
@@ -444,7 +469,8 @@ def analyze_sandwiches(
     merged.drop(["cross_block", "consecutive"], axis=1, inplace=True)
     return merged
 
-os.makedirs('data', exist_ok=True)
+
+os.makedirs("data", exist_ok=True)
 
 # Query Sandwich Txs Data
 # Load credentials from .env
@@ -478,8 +504,8 @@ end_time = time.time()
 elapsed = end_time - start_time
 print(f"Query took {elapsed:.2f} seconds")
 
-start = sandwiches_txs['sandwich_slot'].min()
-end = sandwiches_txs['sandwich_slot'].max()
+start = sandwiches_txs["sandwich_slot"].min()
+end = sandwiches_txs["sandwich_slot"].max()
 print(
     f"Total rows of sandwiches with txs and leader in slots from {sandwiches_txs['sandwich_slot'].min()} to {sandwiches_txs['sandwich_slot'].max()}: sandwiches - {sandwiches_txs['sandwichId'].nunique()} sandwich_txs - {len(sandwiches_txs)}"
 )
@@ -489,9 +515,13 @@ print(
 print("Analyzing sandwiches...")
 # Get info of each sandwich
 start_time = time.time()
-sandwich_stat = analyze_sandwiches(sandwiches_txs, slot_info=quert_slot_info_in_DB(start, end), out_path='data/sandwich_info.csv')
+sandwich_stat = analyze_sandwiches(
+    sandwiches_txs,
+    slot_info=quert_slot_info_in_DB(start, end),
+    out_path="data/sandwich_info.csv",
+)
 end_time = time.time()
 elapsed = end_time - start_time
 print(f"Analysis took {elapsed:.2f} seconds")
 
-sandwich_stat.to_csv('data/sandwich_stat.csv', index=False)
+sandwich_stat.to_csv("data/sandwich_stat.csv", index=False)
