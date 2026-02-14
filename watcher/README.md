@@ -25,6 +25,7 @@ echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg arch=${ARCH}] ht
 sudo apt-get update
 
 sudo apt-get install -y clickhouse-server clickhouse-client
+# Set and remember your password for defualt `user`
 
 sudo service clickhouse-server start
 
@@ -37,6 +38,7 @@ Try to create a database `solwich`:
 
 ```sql
 CREATE DATABASE solwich;
+exit
 ```
 
 ## Setup environment and configs
@@ -49,7 +51,7 @@ Now, create your own configuration files and environment variables about databas
 
 ## Setup Golang environment and build the project
 
-We use a `go 1.24` version. Install it from [golang offical website](https://go.dev/dl/). The below commands are for Ubuntu:
+We use a `go 1.24` version. Install it from [golang offical website](https://go.dev/dl/). The below commands are for x86_64 (AMD) Ubuntu machine (use `uname -m` to see your arch):
 
 ```bash
 wget https://go.dev/dl/go1.24.7.linux-amd64.tar.gz

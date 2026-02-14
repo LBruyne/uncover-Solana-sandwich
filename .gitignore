@@ -3,6 +3,7 @@
 *.xlsx
 *.csv
 
+.venv/
 .env
 .old.env
 .VSCodeCounter
